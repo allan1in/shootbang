@@ -2,6 +2,23 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as THREE from "three";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Settings, ArrowLeft, Home, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+function GlassCard({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl bg-card/80 backdrop-blur-sm text-card-foreground ring-1 ring-foreground/10",
+        className
+      )}
+      {...props}
+    />
+  );
+}
 
 function getGridSpacing(n: number): number {
   const wallW = 50, wallH = 14, margin = 2;
@@ -22,7 +39,13 @@ function generateGridPositions(n: number): [number, number][] {
 }
 
 type GameState = "idle" | "playing" | "finished";
-const BASE_SENSITIVITY = 0.0016;
+// 对齐 CS2: m_yaw(0.022°) × sensitivity(2.5) = 0.055°/count ≈ 0.00096 rad/count
+const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
+const CENTER_SCREEN = new THREE.Vector2(0, 0);
+const GRID_SIZE = 3;
+const TARGET_COUNT = 3;
+const TARGET_SIZE = 0.6;
+const GRID_POSITIONS = generateGridPositions(GRID_SIZE);
 
 interface TargetState { mesh: THREE.Mesh; gridIndex: number }
 
@@ -33,48 +56,30 @@ export default function GameBoard() {
   const sceneRef = useRef<THREE.Scene | null>(null);
   const targetsRef = useRef<TargetState[]>([]);
   const raycasterRef = useRef(new THREE.Raycaster());
-  const mouseRef = useRef(new THREE.Vector2());
   const mouseAccum = useRef({ x: 0, y: 0 });
   const handleClickRef = useRef<() => void>(() => {});
 
   const [gameState, setGameState] = useState<GameState>("idle");
-  const [gridSize, setGridSize] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("shootbang-gridsize");
-      if (saved) return parseInt(saved);
-    }
-    return 3;
-  });
-  const gridPositionsRef = useRef<[number, number][]>(generateGridPositions(3));
   const [sensitivity, setSensitivity] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("shootbang-sensitivity");
-      if (saved) return parseFloat(saved);
+      if (saved) return parseFloat(saved) || 2.5;
     }
-    return 1.25;
+    return 2.5;
   });
   const sensitivityRef = useRef(sensitivity);
-  const [targetSize, setTargetSize] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("shootbang-targetsize");
-      if (saved) return parseFloat(saved);
-    }
-    return 0.4;
-  });
-  const targetSizeRef = useRef(targetSize);
-  const [targetCount, setTargetCount] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("shootbang-targetcount");
-      if (saved) return parseInt(saved);
-    }
-    return 3;
-  });
-  const targetCountRef = useRef(targetCount);
   const [timeLeft, setTimeLeft] = useState(30);
+  const [score, setScore] = useState(0);
   const [hits, setHits] = useState(0);
   const [totalClicks, setTotalClicks] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<number | null>(null);
+  const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempSensitivity, setTempSensitivity] = useState(sensitivity);
+  const isPausedRef = useRef(false);
   const gameStateRef = useRef<GameState>("idle");
 
   useEffect(() => {
@@ -82,24 +87,17 @@ export default function GameBoard() {
   }, [gameState]);
 
   useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  useEffect(() => {
+    countdownRef.current = countdown;
+  }, [countdown]);
+
+  useEffect(() => {
     sensitivityRef.current = sensitivity;
     localStorage.setItem("shootbang-sensitivity", sensitivity.toString());
   }, [sensitivity]);
-
-  useEffect(() => {
-    gridPositionsRef.current = generateGridPositions(gridSize);
-    localStorage.setItem("shootbang-gridsize", gridSize.toString());
-  }, [gridSize]);
-
-  useEffect(() => {
-    targetSizeRef.current = targetSize;
-    localStorage.setItem("shootbang-targetsize", targetSize.toString());
-  }, [targetSize]);
-
-  useEffect(() => {
-    targetCountRef.current = targetCount;
-    localStorage.setItem("shootbang-targetcount", targetCount.toString());
-  }, [targetCount]);
 
   // 初始化 Three.js 场景
   useEffect(() => {
@@ -120,7 +118,6 @@ export default function GameBoard() {
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      preserveDrawingBuffer: true,
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -242,7 +239,7 @@ export default function GameBoard() {
       renderer.setAnimationLoop(null);
 
       scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
           obj.geometry.dispose();
           const mat = obj.material;
           if (Array.isArray(mat)) {
@@ -274,11 +271,6 @@ export default function GameBoard() {
       camera.rotation.y = mouseAccum.current.x;
       camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, mouseAccum.current.y));
 
-      const s = targetSizeRef.current / 0.4;
-      for (const t of targetsRef.current) {
-        t.mesh.scale.setScalar(s);
-      }
-
       renderer.render(scene, camera);
     });
 
@@ -304,6 +296,11 @@ export default function GameBoard() {
         setIsPaused(false);
       } else if (!locked && gameStateRef.current === "playing") {
         setIsPaused(true);
+        // 暂停时清除倒计时
+        if (countdownTimer.current) {
+          clearTimeout(countdownTimer.current);
+          setCountdown(null);
+        }
       }
     };
 
@@ -319,9 +316,11 @@ export default function GameBoard() {
   // 在随机空位生成一个目标
   function spawnTarget(target: TargetState) {
     if (!target) return;
-    const active = targetsRef.current.slice(0, targetCountRef.current);
+    const active = targetsRef.current.slice(0, TARGET_COUNT);
     const occupied = new Set(active.filter(t => t.mesh.visible).map(t => t.gridIndex));
-    const positions = gridPositionsRef.current;
+    // 排除目标自身的旧位置，防止被击中后原地重生
+    occupied.add(target.gridIndex);
+    const positions = GRID_POSITIONS;
     const available = positions.map((_, i) => i).filter(i => !occupied.has(i));
     if (available.length === 0) return;
     const idx = available[Math.floor(Math.random() * available.length)];
@@ -335,6 +334,7 @@ export default function GameBoard() {
   const startGame = useCallback(() => {
     setGameState("playing");
     setTimeLeft(30);
+    setScore(0);
     setHits(0);
     setTotalClicks(0);
     setIsPaused(false);
@@ -344,47 +344,87 @@ export default function GameBoard() {
       t.mesh.visible = false;
       t.gridIndex = -1;
     }
-    const count = Math.min(targetCountRef.current, targetsRef.current.length);
+    const count = Math.min(TARGET_COUNT, targetsRef.current.length);
+    const s = TARGET_SIZE / 0.4;
     for (let i = 0; i < count; i++) {
+      targetsRef.current[i].mesh.scale.setScalar(s);
       spawnTarget(targetsRef.current[i]);
     }
     /* eslint-enable react-hooks/immutability */
+  }, []);
 
-    setTimeout(() => {
-      containerRef.current?.requestPointerLock().catch(() => {});
-    }, 100);
+  // 倒计时：递归 setTimeout，结束后清除状态
+  const startCountdown = useCallback(() => {
+    if (countdownTimer.current) clearTimeout(countdownTimer.current);
+    setCountdown(3);
+    const tick = (n: number) => {
+      countdownTimer.current = setTimeout(() => {
+        if (n > 1) {
+          setCountdown(n - 1);
+          tick(n - 1);
+        } else {
+          setCountdown(null);
+        }
+      }, 1000);
+    };
+    tick(3);
+  }, []);
+
+  const triggerStart = useCallback(() => {
+    containerRef.current?.requestPointerLock().then(() => {
+      startGame();
+      startCountdown();
+    }).catch(() => {});
+  }, [startGame, startCountdown]);
+
+  const triggerResume = useCallback(() => {
+    containerRef.current?.requestPointerLock().then(() => {
+      setIsPaused(false);
+      startCountdown();
+    }).catch(() => {});
+  }, [startCountdown]);
+
+  // 组件卸载时清除倒计时
+  useEffect(() => {
+    return () => {
+      if (countdownTimer.current) clearTimeout(countdownTimer.current);
+    };
   }, []);
 
   // 点击处理
   const handleClick = useCallback(() => {
     if (gameStateRef.current !== "playing") return;
+    if (countdownRef.current !== null) return; // 倒计时期间不计分
     if (!cameraRef.current) return;
 
-    mouseRef.current.set(0, 0);
-    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    raycasterRef.current.setFromCamera(CENTER_SCREEN, cameraRef.current);
 
-    const active = targetsRef.current.slice(0, targetCountRef.current);
-    let hitTarget: { mesh: THREE.Mesh; gridIndex: number } | null = null;
-    let minDist = Infinity;
-    for (const t of active) {
-      if (!t.mesh.visible) continue;
-      t.mesh.updateMatrixWorld();
-      const intersects = raycasterRef.current.intersectObject(t.mesh, true);
-      if (intersects.length > 0 && intersects[0].distance < minDist) {
-        minDist = intersects[0].distance;
-        hitTarget = t;
+    const active = targetsRef.current.slice(0, TARGET_COUNT);
+    const activeMeshes = active.filter(t => t.mesh.visible).map(t => t.mesh);
+    const allIntersects = raycasterRef.current.intersectObjects(activeMeshes, false);
+
+    if (allIntersects.length > 0) {
+      const intersection = allIntersects[0];
+      const hitMesh = intersection.object as THREE.Mesh;
+      const hitTarget = targetsRef.current.find(t => t.mesh === hitMesh);
+      if (hitTarget) {
+        // 精准计分：命中点离目标中心越近分越高
+        const hitPoint = intersection.point;
+        const center = hitTarget.mesh.position;
+        const distance = hitPoint.distanceTo(center);
+        const precision = Math.max(0, 1 - distance / TARGET_SIZE);
+        const points = Math.round(50 + 50 * precision);
+
+        setScore((prev) => prev + points);
+        setHits((prev) => prev + 1);
+        setTotalClicks((prev) => prev + 1);
+        hitTarget.mesh.visible = false;
+        spawnTarget(hitTarget);
       }
-    }
-
-    if (hitTarget) {
-      setHits((prev) => prev + 1);
-      setTotalClicks((prev) => prev + 1);
-      hitTarget.mesh.visible = false;
-      hitTarget.gridIndex = -1;
-      spawnTarget(hitTarget);
     } else {
       setTotalClicks((prev) => prev + 1);
     }
+
   }, []);
 
   useEffect(() => {
@@ -395,9 +435,13 @@ export default function GameBoard() {
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (gameStateRef.current !== "playing") return;
-      if (!document.pointerLockElement && e.button === 0) {
-        containerRef.current?.requestPointerLock().catch(() => {});
-      } else if (document.pointerLockElement && e.button === 0) {
+      if (e.button !== 0) return;
+
+      if (!document.pointerLockElement) {
+        // pointer lock 丢失 — 仅标记暂停，不自动请求锁定
+        if (!isPausedRef.current) setIsPaused(true);
+      } else if (!isPausedRef.current) {
+        // 锁定且未暂停 — 正常射击
         handleClickRef.current();
       }
     };
@@ -405,13 +449,14 @@ export default function GameBoard() {
     return () => window.removeEventListener("mousedown", handleMouseDown);
   }, []);
 
-  // 倒计时
+  // 游戏计时（倒计时期间和暂停时不计时）
   useEffect(() => {
-    if (gameState !== "playing" || isPaused) return;
+    if (gameState !== "playing" || isPaused || countdown !== null) return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
+          gameStateRef.current = "finished";
           setGameState("finished");
           for (const t of targetsRef.current) t.mesh.visible = false;
           document.exitPointerLock();
@@ -423,185 +468,204 @@ export default function GameBoard() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [gameState, isPaused]);
+  }, [gameState, isPaused, countdown]);
 
   const hitRate =
     totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0;
 
   return (
-    <div className="relative w-full h-screen bg-gray-950">
+    <div className="relative w-full h-screen bg-background">
       {/* 准星 */}
       {gameState === "playing" && isLocked && (
         <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center">
           <div className="relative">
-            <div className="absolute w-6 h-0.5 bg-white/70 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
-            <div className="absolute h-6 w-0.5 bg-white/70 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+            <div className="absolute w-6 h-0.5 bg-foreground/70 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
+            <div className="absolute h-6 w-0.5 bg-foreground/70 -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2" />
           </div>
         </div>
       )}
 
       {/* HUD */}
       {gameState === "playing" && (
-        <div className="absolute top-4 left-0 right-0 z-10 flex justify-between px-8 pointer-events-none">
-          <div className="bg-black/70 px-6 py-3 rounded-lg">
-            <span className="text-gray-400 text-sm">时间</span>
-            <div className="text-3xl font-bold text-white">{timeLeft}s</div>
-          </div>
-          <div className="bg-black/70 px-6 py-3 rounded-lg">
-            <span className="text-gray-400 text-sm">命中</span>
-            <div className="text-3xl font-bold text-green-400">{hits}</div>
-          </div>
+        <div className="absolute top-4 left-0 right-0 z-10 flex justify-center gap-4 pointer-events-none">
+          <GlassCard className="w-36 py-4 text-center">
+            <span className="text-muted-foreground text-sm">分数</span>
+            <div className="text-3xl font-bold text-foreground">{score}</div>
+          </GlassCard>
+          <GlassCard className="w-36 py-4 text-center">
+            <span className="text-muted-foreground text-sm">时间</span>
+            <div className="text-3xl font-bold text-foreground">{timeLeft}s</div>
+          </GlassCard>
+          <GlassCard className="w-36 py-4 text-center">
+            <span className="text-muted-foreground text-sm">准确率</span>
+            <div className="text-3xl font-bold text-primary">
+              {totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0}%
+            </div>
+          </GlassCard>
         </div>
       )}
 
       {/* 暂停提示 */}
       {gameState === "playing" && isPaused && (
-        <div className="absolute inset-0 z-25 flex items-center justify-center bg-black/50 cursor-default pointer-events-none">
-          <div className="bg-black/70 px-8 py-4 rounded-lg text-white text-xl">
-            点击画面继续
+        <div className="absolute inset-0 z-25 flex items-center justify-center bg-background/50">
+          <div className="absolute top-4 left-4 flex gap-2">
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="cursor-pointer"
+              onClick={() => {
+                document.exitPointerLock();
+                setGameState("idle");
+                setIsLocked(false);
+                setIsPaused(false);
+              }}
+            >
+              <Home className="size-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="cursor-pointer"
+              onClick={() => {
+                document.exitPointerLock();
+                setIsLocked(false);
+                triggerStart();
+              }}
+            >
+              <RotateCcw className="size-5" />
+            </Button>
           </div>
+          <GlassCard
+            className="px-8 py-4 cursor-pointer hover:bg-card/90 transition-colors"
+            onClick={triggerResume}
+          >
+            <span className="text-foreground text-xl">点击此处继续</span>
+          </GlassCard>
         </div>
       )}
 
       {/* 开始页面 */}
       {gameState === "idle" && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 cursor-default">
-          <h1 className="text-6xl font-bold text-white mb-4 tracking-wider">
-            SHOOT GRID
-          </h1>
-          <p className="text-xl text-gray-400 mb-8">射击网格练习</p>
-          <div className="mb-4 flex items-center gap-4">
-            <label className="text-gray-400 text-sm">网格大小</label>
-            <select
-              value={gridSize}
-              onChange={(e) => {
-                const g = parseInt(e.target.value);
-                setGridSize(g);
-                const max = g * g - 1;
-                if (targetCount > max) setTargetCount(max);
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 cursor-default">
+          {/* 设置按钮 - 仅在非设置页面显示 */}
+          {!showSettings && (
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="absolute top-4 left-4 z-10 cursor-pointer"
+              onClick={() => {
+                setTempSensitivity(sensitivity);
+                setShowSettings(true);
               }}
-              className="bg-gray-800 text-white rounded px-3 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none"
             >
-              {Array.from({ length: 8 }, (_, i) => i + 2).map((n) => (
-                <option key={n} value={n}>{n}x{n}</option>
-              ))}
-            </select>
-          </div>
-          <div className="mb-4 flex items-center gap-4">
-            {(() => {
-              const maxCount = gridSize * gridSize - 1;
-              return (
-                <>
-                  <label className="text-gray-400 text-sm">目标数量</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max={maxCount}
-                    step="1"
-                    value={Math.min(targetCount, maxCount)}
-                    onChange={(e) => setTargetCount(parseInt(e.target.value))}
-                    className="w-48 accent-blue-600"
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    max={maxCount}
-                    step="1"
-                    value={targetCount}
-                    onChange={(e) => setTargetCount(Math.max(1, Math.min(maxCount, parseInt(e.target.value) || 1)))}
-                    className="w-20 bg-gray-800 text-white text-center rounded px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </>
-              );
-            })()}
-          </div>
-          <div className="mb-4 flex items-center gap-4">
-            {(() => {
-              const maxTarget = Math.round(getGridSpacing(gridSize) / 2 * 100) / 100;
-              return (
-                <>
-                  <label className="text-gray-400 text-sm">目标大小</label>
-                  <input
-                    type="range"
-                    min="0.01"
-                    max={maxTarget}
-                    step="0.01"
-                    value={Math.min(targetSize, maxTarget)}
-                    onChange={(e) => setTargetSize(parseFloat(e.target.value))}
-                    className="w-48 accent-blue-600"
-                  />
-                  <input
-                    type="number"
-                    min="0.01"
-                    max={maxTarget}
-                    step="0.01"
-                    value={targetSize}
-                    onChange={(e) => setTargetSize(Math.max(0.01, Math.min(maxTarget, parseFloat(e.target.value) || 0.01)))}
-                    className="w-20 bg-gray-800 text-white text-center rounded px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </>
-              );
-            })()}
-          </div>
-          <div className="mb-8 flex items-center gap-4">
-            <label className="text-gray-400 text-sm">灵敏度</label>
-            <input
-              type="range"
-              min="0.01"
-              max="9.99"
-              step="0.01"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(parseFloat(e.target.value))}
-              className="w-48 accent-blue-600"
-            />
-            <input
-              type="number"
-              min="0.01"
-              max="9.99"
-              step="0.01"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(Math.max(0.01, Math.min(9.99, parseFloat(e.target.value) || 0.01)))}
-              className="w-20 bg-gray-800 text-white text-center rounded px-2 py-1 border border-gray-600 focus:border-blue-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-          </div>
-          <button
-            onClick={startGame}
-            className="px-12 py-4 bg-blue-600 hover:bg-blue-700 text-white text-xl font-semibold rounded-lg transition-colors duration-200 transform hover:scale-105"
-          >
-            开始游戏
-          </button>
+              <Settings className="size-5" />
+            </Button>
+          )}
+
+          {/* 开始测试按钮 - 仅在非设置页面显示 */}
+          {!showSettings && (
+            <GlassCard
+              className="px-8 py-4 cursor-pointer hover:bg-card/90 transition-colors"
+              onClick={triggerStart}
+            >
+              <span className="text-foreground text-xl">开始测试</span>
+            </GlassCard>
+          )}
+
+          {/* 设置面板 */}
+          {showSettings && (
+            <GlassCard className="w-80 p-6 space-y-6">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon-lg"
+                  className="cursor-pointer -ml-2"
+                  onClick={() => setShowSettings(false)}
+                >
+                  <ArrowLeft className="size-4" />
+                </Button>
+                <span className="text-xl font-medium">设置</span>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">灵敏度</Label>
+                <Input
+                  type="number"
+                  min={0.01}
+                  max={10}
+                  step={0.01}
+                  value={tempSensitivity}
+                  onChange={(e) => setTempSensitivity(Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.01)))}
+                  className="h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 cursor-pointer border-foreground/10"
+                  onClick={() => setShowSettings(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 cursor-pointer border-foreground/10"
+                  onClick={() => {
+                    setSensitivity(tempSensitivity);
+                    setShowSettings(false);
+                  }}
+                >
+                  保存
+                </Button>
+              </div>
+            </GlassCard>
+          )}
         </div>
       )}
 
       {/* 结算页面 */}
       {gameState === "finished" && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 cursor-default">
-          <h2 className="text-5xl font-bold text-white mb-8">游戏结束</h2>
-          <div className="grid grid-cols-2 gap-8 mb-12">
-            <div className="text-center">
-              <div className="text-6xl font-bold text-green-400">{hits}</div>
-              <div className="text-gray-400 mt-2">命中数</div>
-            </div>
-            <div className="text-center">
-              <div className="text-6xl font-bold text-blue-400">
-                {hitRate}%
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/80 cursor-default">
+          <h2 className="text-4xl font-bold text-foreground mb-8 tracking-wide">
+            游戏结束
+          </h2>
+          <GlassCard className="w-80 p-6 space-y-6">
+            <div className="text-center text-xl font-medium">本次成绩</div>
+            <div className="space-y-6">
+              <div className="text-center">
+                <div className="text-5xl font-bold text-primary">{score}</div>
+                <div className="text-sm text-muted-foreground mt-1">总分</div>
               </div>
-              <div className="text-gray-400 mt-2">命中率</div>
+              <div className="grid grid-cols-2 gap-6 text-center">
+                <div>
+                  <div className="text-3xl font-bold text-foreground">{hits}</div>
+                  <div className="text-sm text-muted-foreground mt-1">命中数</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-foreground">{hitRate}%</div>
+                  <div className="text-sm text-muted-foreground mt-1">准确率</div>
+                </div>
+              </div>
+              <div className="text-center text-sm text-muted-foreground">
+                总点击: {totalClicks}
+              </div>
             </div>
-          </div>
-          <div className="flex gap-4">
-            <button
-              onClick={startGame}
-              className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors duration-200"
-            >
-              再来一局
-            </button>
-            <button
-              onClick={() => setGameState("idle")}
-              className="px-8 py-3 bg-blue-900 hover:bg-blue-800 text-white font-semibold rounded-lg transition-colors duration-200"
-            >
-              返回首页
-            </button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={startGame}>
+                再来一局
+              </Button>
+              <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={() => setGameState("idle")}>
+                返回首页
+              </Button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* 倒计时 */}
+      {countdown !== null && (
+        <div className="absolute inset-0 z-40 flex items-start justify-center pointer-events-none pt-[25vh]">
+          <div className="text-9xl font-bold text-foreground/80 tabular-nums">
+            {countdown}
           </div>
         </div>
       )}
@@ -609,6 +673,7 @@ export default function GameBoard() {
       {/* 3D 场景 */}
       <div
         ref={containerRef}
+        tabIndex={-1}
         className={`w-full h-full ${isLocked ? "cursor-none" : "cursor-default"}`}
       />
     </div>

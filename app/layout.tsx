@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ShootGrid - 射击网格练习",
-  description: "3x3 网格射击练习工具，帮助 FPS 玩家提升瞄准精准度",
+  description: "可配置网格射击练习工具，帮助 FPS 玩家提升瞄准精准度",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
