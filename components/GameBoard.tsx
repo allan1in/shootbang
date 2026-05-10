@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import * as THREE from "three";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Settings, Home, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useSyncRef } from "@/hooks/useSyncRef";
+import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
+import { AuthDialog } from "@/components/AuthDialog";
+import { LogOut, User } from "lucide-react";
 
 function getGridSpacing(n: number): number {
   const wallW = 50, wallH = 14, margin = 2;
@@ -32,12 +35,35 @@ type GameState = "idle" | "playing" | "finished";
 // 对齐 CS2: m_yaw(0.022°) × sensitivity(2.5) = 0.055°/count ≈ 0.00096 rad/count
 const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
-const GRID_SIZE = 3;
-const TARGET_COUNT = 3;
 const TARGET_SIZE = 0.6;
-const GRID_POSITIONS = generateGridPositions(GRID_SIZE);
 
-interface TargetState { mesh: THREE.Mesh; gridIndex: number }
+interface TargetState { mesh: THREE.Mesh; gridIndex: number; spawnTime: number }
+
+interface User {
+  id: number;
+  email: string;
+}
+
+// 在随机空位生成一个目标
+function spawnTarget(
+  target: TargetState,
+  allTargets: TargetState[],
+  gridPositions: [number, number][],
+  targetCount: number,
+) {
+  if (!target) return;
+  const active = allTargets.slice(0, targetCount);
+  const occupied = new Set(active.filter(t => t.mesh.visible).map(t => t.gridIndex));
+  occupied.add(target.gridIndex);
+  const available = gridPositions.map((_, i) => i).filter(i => !occupied.has(i));
+  if (available.length === 0) return;
+  const idx = available[Math.floor(Math.random() * available.length)];
+  const [x, y] = gridPositions[idx];
+  target.gridIndex = idx;
+  target.mesh.position.set(x, y, -5);
+  target.mesh.visible = true;
+  target.spawnTime = Date.now();
+}
 
 export default function GameBoard() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,12 +77,34 @@ export default function GameBoard() {
 
   const [gameState, setGameState] = useState<GameState>("idle");
   const [sensitivity, setSensitivity] = useState(() => {
-    if (typeof window !== "undefined") {
+    try {
       const saved = localStorage.getItem("shootbang-sensitivity");
       if (saved) return parseFloat(saved) || 2.5;
-    }
+    } catch {}
     return 2.5;
   });
+  const [gridSize, setGridSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem("shootbang-gridSize");
+      if (saved) return parseInt(saved) || 3;
+    } catch {}
+    return 3;
+  });
+  const [targetCount, setTargetCount] = useState(() => {
+    try {
+      const saved = localStorage.getItem("shootbang-targetCount");
+      if (saved) return parseInt(saved) || 3;
+    } catch {}
+    return 3;
+  });
+  const [duration, setDuration] = useState(() => {
+    try {
+      const saved = localStorage.getItem("shootbang-duration");
+      if (saved) return parseInt(saved) || 30;
+    } catch {}
+    return 30;
+  });
+  const gridPositions = useMemo(() => generateGridPositions(gridSize), [gridSize]);
   const [timeLeft, setTimeLeft] = useState(30);
   const [score, setScore] = useState(0);
   const [hits, setHits] = useState(0);
@@ -67,14 +115,55 @@ export default function GameBoard() {
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [tempSensitivity, setTempSensitivity] = useState(sensitivity);
+  const [tempGridSize, setTempGridSize] = useState(gridSize);
+  const [tempTargetCount, setTempTargetCount] = useState(targetCount);
+  const [tempDuration, setTempDuration] = useState(duration);
+  const [user, setUser] = useState<User | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [reactionTimes, setReactionTimes] = useState<number[]>([]);
+  const [isNewBest, setIsNewBest] = useState(false);
   const gameStateRef = useSyncRef(gameState);
   const isPausedRef = useSyncRef(isPaused);
-  const countdownRef = useSyncRef(countdown);
   const sensitivityRef = useSyncRef(sensitivity);
+  const gridPositionsRef = useSyncRef(gridPositions);
+  const targetCountRef = useSyncRef(targetCount);
+  const durationRef = useSyncRef(duration);
 
   useEffect(() => {
-    localStorage.setItem("shootbang-sensitivity", sensitivity.toString());
+    try {
+      localStorage.setItem("shootbang-sensitivity", sensitivity.toString());
+    } catch {}
   }, [sensitivity]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("shootbang-gridSize", gridSize.toString());
+    } catch {}
+  }, [gridSize]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("shootbang-targetCount", targetCount.toString());
+    } catch {}
+  }, [targetCount]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("shootbang-duration", duration.toString());
+    } catch {}
+  }, [duration]);
+
+  // 检查登录状态
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.user) {
+          setUser(data.user);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // 初始化 Three.js 场景
   useEffect(() => {
@@ -84,8 +173,26 @@ export default function GameBoard() {
     const width = container.clientWidth;
     const height = container.clientHeight;
 
+    // 从 CSS 变量读取主题色，保持 3D 场景与 UI 风格统一
+    const cs = getComputedStyle(document.documentElement);
+    const varToHex = (name: string) => {
+      const raw = cs.getPropertyValue(name).trim();
+      const m = raw.match(/^oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+%?)\)/);
+      if (m) {
+        const L = parseFloat(m[1]), a = parseFloat(m[2]), angle = parseFloat(m[3]);
+        const h = angle * Math.PI / 180;
+        const lr = L ** 3;
+        const r = lr + 0.3963377774 * a * Math.cos(h) + 0.2158037573 * a * Math.sin(h);
+        const g = lr - 0.1055613458 * a * Math.cos(h) - 0.0638541728 * a * Math.sin(h);
+        const b = lr - 0.0894841775 * a * Math.cos(h) - 1.2914855480 * a * Math.sin(h);
+        const toSRGB = (x: number) => Math.round(Math.min(1, Math.max(0, x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055)) * 255);
+        return (toSRGB(r) << 16) | (toSRGB(g) << 8) | toSRGB(b);
+      }
+      return 0x111111;
+    };
+
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a1a);
+    scene.background = new THREE.Color(varToHex("--background"));
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
@@ -121,8 +228,8 @@ export default function GameBoard() {
     scene.add(fillLight);
 
     // 立方体围壁
-    const wallColor = 0x0d0d1a;
-    const gridColor = 0x222244;
+    const wallColor = varToHex("--card");
+    const gridColor = varToHex("--border");
     const S = 50;
     const WH = 14;
     const gridDiv = 50;
@@ -173,13 +280,13 @@ export default function GameBoard() {
       roughness: 0.2,
       metalness: 0.3,
     });
-    const targets: { mesh: THREE.Mesh; gridIndex: number }[] = [];
+    const targets: TargetState[] = [];
     for (let i = 0; i < MAX_TARGETS; i++) {
       const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
       sphere.castShadow = true;
       sphere.visible = false;
       scene.add(sphere);
-      targets.push({ mesh: sphere, gridIndex: -1 });
+      targets.push({ mesh: sphere, gridIndex: -1, spawnTime: 0 });
     }
     targetsRef.current = targets;
 
@@ -189,8 +296,7 @@ export default function GameBoard() {
       e.preventDefault();
     };
     const handleContextRestored = () => {
-      // context 恢复后需要重新初始化，这里简单提示用户刷新
-      alert("WebGL context 已恢复，如画面异常请刷新页面");
+      toast.error("WebGL context 已恢复，如画面异常请刷新页面");
     };
     canvas.addEventListener("webglcontextlost", handleContextLost);
     canvas.addEventListener("webglcontextrestored", handleContextRestored);
@@ -241,7 +347,9 @@ export default function GameBoard() {
 
     if (gameState !== "playing") {
       renderer.setAnimationLoop(null);
+      /* eslint-disable react-hooks/immutability */
       for (const t of targetsRef.current) t.mesh.visible = false;
+      /* eslint-enable react-hooks/immutability */
       renderer.render(scene, camera);
       return;
     }
@@ -292,42 +400,27 @@ export default function GameBoard() {
     };
   }, []);
 
-  // 在随机空位生成一个目标
-  function spawnTarget(target: TargetState) {
-    if (!target) return;
-    const active = targetsRef.current.slice(0, TARGET_COUNT);
-    const occupied = new Set(active.filter(t => t.mesh.visible).map(t => t.gridIndex));
-    // 排除目标自身的旧位置，防止被击中后原地重生
-    occupied.add(target.gridIndex);
-    const positions = GRID_POSITIONS;
-    const available = positions.map((_, i) => i).filter(i => !occupied.has(i));
-    if (available.length === 0) return;
-    const idx = available[Math.floor(Math.random() * available.length)];
-    const [x, y] = positions[idx];
-    target.gridIndex = idx;
-    target.mesh.position.set(x, y, -5);
-    target.mesh.visible = true;
-  }
-
   // 开始游戏
   const startGame = useCallback(() => {
     setGameState("playing");
-    setTimeLeft(30);
+    setTimeLeft(durationRef.current);
     setScore(0);
     setHits(0);
     setTotalClicks(0);
     setIsPaused(false);
+    setIsNewBest(false);
+    setReactionTimes([]);
 
     /* eslint-disable react-hooks/immutability */
     for (const t of targetsRef.current) {
       t.mesh.visible = false;
       t.gridIndex = -1;
     }
-    const count = Math.min(TARGET_COUNT, targetsRef.current.length);
+    const count = Math.min(targetCountRef.current, targetsRef.current.length);
     const s = TARGET_SIZE / 0.4;
     for (let i = 0; i < count; i++) {
       targetsRef.current[i].mesh.scale.setScalar(s);
-      spawnTarget(targetsRef.current[i]);
+      spawnTarget(targetsRef.current[i], targetsRef.current, gridPositionsRef.current, targetCountRef.current);
     }
     /* eslint-enable react-hooks/immutability */
   }, []);
@@ -337,11 +430,13 @@ export default function GameBoard() {
     if (countdownTimer.current) clearTimeout(countdownTimer.current);
     setCountdown(3);
     const tick = (n: number) => {
+      playCountdownSound();
       countdownTimer.current = setTimeout(() => {
         if (n > 1) {
           setCountdown(n - 1);
           tick(n - 1);
         } else {
+          countdownTimer.current = null;
           setCountdown(null);
         }
       }, 1000);
@@ -367,6 +462,18 @@ export default function GameBoard() {
     }).catch(() => {});
   }, [startCountdown]);
 
+  // 测试辅助：暴露游戏控制函数到 window
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.__shootbang_test = {
+      startGame,
+      startCountdown,
+      setGameState,
+      getGameState: () => gameStateRef.current,
+    };
+    return () => { delete w.__shootbang_test; };
+  });
+
   // 组件卸载时清除倒计时
   useEffect(() => {
     return () => {
@@ -377,12 +484,12 @@ export default function GameBoard() {
   // 点击处理
   const handleClick = useCallback(() => {
     if (gameStateRef.current !== "playing") return;
-    if (countdownRef.current !== null) return; // 倒计时期间不计分
+    if (countdownTimer.current !== null) return; // 倒计时期间不计分
     if (!cameraRef.current) return;
 
     raycasterRef.current.setFromCamera(CENTER_SCREEN, cameraRef.current);
 
-    const active = targetsRef.current.slice(0, TARGET_COUNT);
+    const active = targetsRef.current.slice(0, targetCountRef.current);
     const activeMeshes = active.filter(t => t.mesh.visible).map(t => t.mesh);
     const allIntersects = raycasterRef.current.intersectObjects(activeMeshes, false);
 
@@ -398,13 +505,20 @@ export default function GameBoard() {
         const precision = Math.max(0, 1 - distance / TARGET_SIZE);
         const points = Math.round(50 + 50 * precision);
 
+        playHitSound();
         setScore((prev) => prev + points);
         setHits((prev) => prev + 1);
         setTotalClicks((prev) => prev + 1);
+        // 反应时间追踪
+        const rt = Date.now() - hitTarget.spawnTime;
+        if (rt > 0 && rt < 10000) {
+          setReactionTimes((prev) => [...prev, rt]);
+        }
         hitTarget.mesh.visible = false;
-        spawnTarget(hitTarget);
+        spawnTarget(hitTarget, targetsRef.current, gridPositionsRef.current, targetCountRef.current);
       }
     } else {
+      playMissSound();
       setTotalClicks((prev) => prev + 1);
     }
 
@@ -456,6 +570,35 @@ export default function GameBoard() {
   const hitRate =
     totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0;
 
+  const reactionAvg =
+    reactionTimes.length > 0
+      ? Math.round(reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length)
+      : null;
+
+  // 游戏结束后保存成绩（已登录时）
+  useEffect(() => {
+    if (gameState !== "finished" || !user) return;
+    fetch("/api/scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        score,
+        hits,
+        totalClicks,
+        hitRate,
+        reactionAvg,
+        gridSize,
+        targetCount,
+        duration,
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.isNewBest) setIsNewBest(true);
+      })
+      .catch(() => {});
+  }, [gameState]);
+
   return (
     <div className="relative w-full h-screen bg-background">
       {/* 准星 */}
@@ -490,7 +633,7 @@ export default function GameBoard() {
 
       {/* 暂停提示 */}
       {gameState === "playing" && isPaused && (
-        <div className="absolute inset-0 z-25 flex items-center justify-center bg-background/50">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50">
           <div className="absolute top-4 left-4 flex gap-2">
             <Button
               variant="ghost"
@@ -540,11 +683,46 @@ export default function GameBoard() {
               className="absolute top-4 left-4 z-10 cursor-pointer"
               onClick={() => {
                 setTempSensitivity(sensitivity);
+                setTempGridSize(gridSize);
+                setTempTargetCount(targetCount);
+                setTempDuration(duration);
                 setShowSettings(true);
               }}
             >
               <Settings className="size-5" />
             </Button>
+          )}
+
+          {/* 用户按钮 - 仅在非设置页面显示 */}
+          {!showSettings && (
+            <div className="absolute top-4 right-4 z-10">
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground truncate max-w-[160px]">
+                    {user.email}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon-lg"
+                    className="cursor-pointer"
+                    onClick={() => {
+                      fetch("/api/auth/logout", { method: "POST" }).then(() => setUser(null));
+                    }}
+                  >
+                    <LogOut className="size-5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon-lg"
+                  className="cursor-pointer"
+                  onClick={() => setShowAuth(true)}
+                >
+                  <User className="size-5" />
+                </Button>
+              )}
+            </div>
           )}
 
           {/* 开始测试按钮 - 仅在非设置页面显示 */}
@@ -565,17 +743,71 @@ export default function GameBoard() {
               <CardHeader>
                 <CardTitle>设置</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <Label className="text-sm">灵敏度</Label>
-                <Input
-                  type="number"
-                  min={0.01}
-                  max={10}
-                  step={0.01}
-                  value={tempSensitivity}
-                  onChange={(e) => setTempSensitivity(Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.01)))}
-                  className="h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-sm">灵敏度</Label>
+                  <Input
+                    type="number"
+                    min={0.01}
+                    max={10}
+                    step={0.01}
+                    value={tempSensitivity}
+                    onChange={(e) => setTempSensitivity(Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.01)))}
+                    className="h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">游戏时长</Label>
+                  <div className="flex gap-2">
+                    {[15, 30, 60, 120].map((v) => (
+                      <Button
+                        key={v}
+                        variant={tempDuration === v ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 cursor-pointer"
+                        onClick={() => setTempDuration(v)}
+                      >
+                        {v}s
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">网格大小</Label>
+                  <div className="flex gap-2">
+                    {[3, 4, 5, 6].map((v) => (
+                      <Button
+                        key={v}
+                        variant={tempGridSize === v ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 cursor-pointer"
+                        onClick={() => {
+                          setTempGridSize(v);
+                          const maxTargets = Math.min(v * v - 1, 6);
+                          if (tempTargetCount > maxTargets) setTempTargetCount(maxTargets);
+                        }}
+                      >
+                        {v}x{v}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">同时目标数</Label>
+                  <div className="flex gap-2">
+                    {Array.from({ length: Math.min(tempGridSize * tempGridSize - 1, 6) }, (_, i) => i + 1).map((v) => (
+                      <Button
+                        key={v}
+                        variant={tempTargetCount === v ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 cursor-pointer"
+                        onClick={() => setTempTargetCount(v)}
+                      >
+                        {v}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </CardContent>
               <CardFooter className="gap-2">
                 <Button
@@ -590,7 +822,23 @@ export default function GameBoard() {
                   className="flex-1 cursor-pointer border-foreground/10"
                   onClick={() => {
                     setSensitivity(tempSensitivity);
+                    setGridSize(tempGridSize);
+                    setTargetCount(tempTargetCount);
+                    setDuration(tempDuration);
                     setShowSettings(false);
+                    // 同步到后端（已登录时）
+                    if (user) {
+                      fetch("/api/settings", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          sensitivity: tempSensitivity,
+                          duration: tempDuration,
+                          gridSize: tempGridSize,
+                          targetCount: tempTargetCount,
+                        }),
+                      }).catch(() => {});
+                    }
                   }}
                 >
                   保存
@@ -606,9 +854,14 @@ export default function GameBoard() {
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/80 cursor-default">
           <Card className="w-80">
             <CardContent className="space-y-6">
-              <div className="text-center">
+              <div className="relative text-center">
                 <div className="text-5xl font-bold text-primary">{score}</div>
                 <div className="text-sm text-muted-foreground mt-1">总分</div>
+                {isNewBest && (
+                  <div className="absolute -bottom-5 left-0 right-0 text-sm text-yellow-500 font-semibold">
+                    新纪录!
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-6 text-center">
                 <div>
@@ -620,6 +873,12 @@ export default function GameBoard() {
                   <div className="text-sm text-muted-foreground mt-1">准确率</div>
                 </div>
               </div>
+              {reactionAvg !== null && (
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-foreground">{reactionAvg}ms</div>
+                  <div className="text-sm text-muted-foreground mt-1">平均反应时间</div>
+                </div>
+              )}
             </CardContent>
             <CardFooter className="gap-2">
               <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={triggerStart}>
@@ -641,6 +900,29 @@ export default function GameBoard() {
           </div>
         </div>
       )}
+
+      {/* 登录/注册对话框 */}
+      <AuthDialog
+        open={showAuth}
+        onClose={() => setShowAuth(false)}
+        onAuth={(u) => {
+          setUser(u);
+          setIsNewBest(false);
+          // 登录后从数据库同步设置覆盖本地
+          fetch("/api/settings")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data?.settings) {
+                const s = data.settings;
+                setSensitivity(s.sensitivity);
+                setDuration(s.duration);
+                setGridSize(s.gridSize);
+                setTargetCount(s.targetCount);
+              }
+            })
+            .catch(() => {});
+        }}
+      />
 
       {/* 3D 场景 */}
       <div

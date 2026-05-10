@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  scores    Score[]
+  settings  Settings?
+}
+
+model Score {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  score       Int
+  hits        Int
+  totalClicks Int
+  hitRate     Float
+  reactionAvg Float?
+  gridSize    Int      @default(3)
+  targetCount Int      @default(3)
+  duration    Int      @default(30)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, gridSize, targetCount, duration, score])
+}
+
+model Settings {
+  id          Int   @id @default(autoincrement())
+  userId      Int   @unique
+  sensitivity Float @default(2.5)
+  duration    Int   @default(30)
+  gridSize    Int   @default(3)
+  targetCount Int   @default(3)
+  user        User  @relation(fields: [userId], references: [id])
+}
