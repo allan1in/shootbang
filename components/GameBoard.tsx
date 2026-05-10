@@ -5,20 +5,10 @@ import * as THREE from "three";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Settings, ArrowLeft, Home, RotateCcw } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-function GlassCard({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl bg-card/80 backdrop-blur-sm text-card-foreground ring-1 ring-foreground/10",
-        className
-      )}
-      {...props}
-    />
-  );
-}
+import { Settings, Home, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
+import { useSyncRef } from "@/hooks/useSyncRef";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 
 function getGridSpacing(n: number): number {
   const wallW = 50, wallH = 14, margin = 2;
@@ -67,7 +57,6 @@ export default function GameBoard() {
     }
     return 2.5;
   });
-  const sensitivityRef = useRef(sensitivity);
   const [timeLeft, setTimeLeft] = useState(30);
   const [score, setScore] = useState(0);
   const [hits, setHits] = useState(0);
@@ -75,27 +64,15 @@ export default function GameBoard() {
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const countdownRef = useRef<number | null>(null);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [tempSensitivity, setTempSensitivity] = useState(sensitivity);
-  const isPausedRef = useRef(false);
-  const gameStateRef = useRef<GameState>("idle");
+  const gameStateRef = useSyncRef(gameState);
+  const isPausedRef = useSyncRef(isPaused);
+  const countdownRef = useSyncRef(countdown);
+  const sensitivityRef = useSyncRef(sensitivity);
 
   useEffect(() => {
-    gameStateRef.current = gameState;
-  }, [gameState]);
-
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    countdownRef.current = countdown;
-  }, [countdown]);
-
-  useEffect(() => {
-    sensitivityRef.current = sensitivity;
     localStorage.setItem("shootbang-sensitivity", sensitivity.toString());
   }, [sensitivity]);
 
@@ -187,7 +164,7 @@ export default function GameBoard() {
     addWall(S, WH, [25, 6.5, 12.5], [0, -Math.PI / 2, 0], [24.99, 6.5, 12.5], [0, 0, Math.PI / 2]);
 
     // 目标球体池
-    const MAX_TARGETS = 80;
+    const MAX_TARGETS = 10;
     const sphereGeometry = new THREE.SphereGeometry(0.4, 32, 32);
     const sphereMaterial = new THREE.MeshStandardMaterial({
       color: 0x0066ff,
@@ -264,6 +241,8 @@ export default function GameBoard() {
 
     if (gameState !== "playing") {
       renderer.setAnimationLoop(null);
+      for (const t of targetsRef.current) t.mesh.visible = false;
+      renderer.render(scene, camera);
       return;
     }
 
@@ -374,6 +353,8 @@ export default function GameBoard() {
     containerRef.current?.requestPointerLock().then(() => {
       startGame();
       startCountdown();
+      toast.dismiss();
+      toast.info("按 Esc 退出瞄准模式");
     }).catch(() => {});
   }, [startGame, startCountdown]);
 
@@ -381,6 +362,8 @@ export default function GameBoard() {
     containerRef.current?.requestPointerLock().then(() => {
       setIsPaused(false);
       startCountdown();
+      toast.dismiss();
+      toast.info("按 Esc 退出瞄准模式");
     }).catch(() => {});
   }, [startCountdown]);
 
@@ -488,20 +471,20 @@ export default function GameBoard() {
       {/* HUD */}
       {gameState === "playing" && (
         <div className="absolute top-4 left-0 right-0 z-10 flex justify-center gap-4 pointer-events-none">
-          <GlassCard className="w-36 py-4 text-center">
+          <Card className="w-36 text-center">
             <span className="text-muted-foreground text-sm">分数</span>
             <div className="text-3xl font-bold text-foreground">{score}</div>
-          </GlassCard>
-          <GlassCard className="w-36 py-4 text-center">
+          </Card>
+          <Card className="w-36 text-center">
             <span className="text-muted-foreground text-sm">时间</span>
             <div className="text-3xl font-bold text-foreground">{timeLeft}s</div>
-          </GlassCard>
-          <GlassCard className="w-36 py-4 text-center">
+          </Card>
+          <Card className="w-36 text-center">
             <span className="text-muted-foreground text-sm">准确率</span>
             <div className="text-3xl font-bold text-primary">
-              {totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0}%
+              {hitRate}%
             </div>
-          </GlassCard>
+          </Card>
         </div>
       )}
 
@@ -535,12 +518,14 @@ export default function GameBoard() {
               <RotateCcw className="size-5" />
             </Button>
           </div>
-          <GlassCard
-            className="px-8 py-4 cursor-pointer hover:bg-card/90 transition-colors"
+          <Button
+            variant="outline"
+            size="lg"
+            className="cursor-pointer border-foreground/10 text-base"
             onClick={triggerResume}
           >
-            <span className="text-foreground text-xl">点击此处继续</span>
-          </GlassCard>
+            点击此处继续
+          </Button>
         </div>
       )}
 
@@ -564,30 +549,24 @@ export default function GameBoard() {
 
           {/* 开始测试按钮 - 仅在非设置页面显示 */}
           {!showSettings && (
-            <GlassCard
-              className="px-8 py-4 cursor-pointer hover:bg-card/90 transition-colors"
+            <Button
+              variant="outline"
+              size="lg"
+              className="cursor-pointer border-foreground/10 text-base"
               onClick={triggerStart}
             >
-              <span className="text-foreground text-xl">开始测试</span>
-            </GlassCard>
+              开始测试
+            </Button>
           )}
 
           {/* 设置面板 */}
           {showSettings && (
-            <GlassCard className="w-80 p-6 space-y-6">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon-lg"
-                  className="cursor-pointer -ml-2"
-                  onClick={() => setShowSettings(false)}
-                >
-                  <ArrowLeft className="size-4" />
-                </Button>
-                <span className="text-xl font-medium">设置</span>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">灵敏度</Label>
+            <Card className="w-80">
+              <CardHeader>
+                <CardTitle>设置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Label className="text-sm">灵敏度</Label>
                 <Input
                   type="number"
                   min={0.01}
@@ -597,8 +576,8 @@ export default function GameBoard() {
                   onChange={(e) => setTempSensitivity(Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.01)))}
                   className="h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-              </div>
-              <div className="flex gap-2">
+              </CardContent>
+              <CardFooter className="gap-2">
                 <Button
                   variant="outline"
                   className="flex-1 cursor-pointer border-foreground/10"
@@ -616,8 +595,8 @@ export default function GameBoard() {
                 >
                   保存
                 </Button>
-              </div>
-            </GlassCard>
+              </CardFooter>
+            </Card>
           )}
         </div>
       )}
@@ -625,12 +604,8 @@ export default function GameBoard() {
       {/* 结算页面 */}
       {gameState === "finished" && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/80 cursor-default">
-          <h2 className="text-4xl font-bold text-foreground mb-8 tracking-wide">
-            游戏结束
-          </h2>
-          <GlassCard className="w-80 p-6 space-y-6">
-            <div className="text-center text-xl font-medium">本次成绩</div>
-            <div className="space-y-6">
+          <Card className="w-80">
+            <CardContent className="space-y-6">
               <div className="text-center">
                 <div className="text-5xl font-bold text-primary">{score}</div>
                 <div className="text-sm text-muted-foreground mt-1">总分</div>
@@ -645,19 +620,16 @@ export default function GameBoard() {
                   <div className="text-sm text-muted-foreground mt-1">准确率</div>
                 </div>
               </div>
-              <div className="text-center text-sm text-muted-foreground">
-                总点击: {totalClicks}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={startGame}>
+            </CardContent>
+            <CardFooter className="gap-2">
+              <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={triggerStart}>
                 再来一局
               </Button>
               <Button variant="outline" className="flex-1 cursor-pointer border-foreground/10" onClick={() => setGameState("idle")}>
                 返回首页
               </Button>
-            </div>
-          </GlassCard>
+            </CardFooter>
+          </Card>
         </div>
       )}
 
