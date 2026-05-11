@@ -85,6 +85,46 @@ test.describe("设置面板", () => {
     await expect(page.getByText("设置")).not.toBeVisible();
     await expect(page.getByText("开始测试")).toBeVisible();
   });
+
+  test("显示准星样式设置", async ({ page }) => {
+    await expect(page.getByText("准星样式")).toBeVisible();
+    await expect(page.getByText("十字")).toBeVisible();
+    await expect(page.getByText("方点")).toBeVisible();
+    await expect(page.getByText("圆点")).toBeVisible();
+  });
+
+  test("显示准星大小设置", async ({ page }) => {
+    await expect(page.getByText("准星大小")).toBeVisible();
+  });
+
+  test("显示目标大小设置", async ({ page }) => {
+    await expect(page.getByText("目标大小")).toBeVisible();
+    await expect(page.getByRole("button", { name: "极小" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "小", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "默认" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "大", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "极大" })).toBeVisible();
+  });
+
+  test("修改准星样式并保存", async ({ page }) => {
+    await page.getByText("圆点").click();
+    await page.getByText("保存").click();
+
+    const saved = await page.evaluate(() =>
+      localStorage.getItem("shootbang-crosshairStyle")
+    );
+    expect(saved).toBe("dot");
+  });
+
+  test("修改目标大小并保存", async ({ page }) => {
+    await page.getByRole("button", { name: "大", exact: true }).click();
+    await page.getByText("保存").click();
+
+    const saved = await page.evaluate(() =>
+      localStorage.getItem("shootbang-targetSize")
+    );
+    expect(saved).toBe("large");
+  });
 });
 
 // ===== 游戏中 HUD =====
@@ -178,6 +218,51 @@ test.describe("返回首页", () => {
     await expect(page.getByText("开始测试")).toBeVisible();
     const state = await getGameState(page);
     expect(state).toBe("idle");
+  });
+});
+
+// ===== 导航链接 =====
+
+test.describe("导航链接", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+  });
+
+  test("显示排行榜链接", async ({ page }) => {
+    await expect(page.getByText("排行榜")).toBeVisible();
+  });
+
+  test("点击排行榜跳转到排行榜页面", async ({ page }) => {
+    await page.getByText("排行榜").click();
+    await page.waitForURL("**/leaderboard");
+    await expect(page.getByText("排行榜")).toBeVisible();
+  });
+});
+
+// ===== 排行榜页面 =====
+
+test.describe("排行榜页面", () => {
+  test("显示时长筛选按钮", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await expect(page.getByText("时长:")).toBeVisible();
+    await expect(page.getByText("15s")).toBeVisible();
+    await expect(page.getByText("30s")).toBeVisible();
+    await expect(page.getByText("60s")).toBeVisible();
+    await expect(page.getByText("120s")).toBeVisible();
+  });
+
+  test("显示网格筛选按钮", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await expect(page.getByText("网格:")).toBeVisible();
+    await expect(page.getByText("3x3")).toBeVisible();
+    await expect(page.getByText("6x6")).toBeVisible();
+  });
+
+  test("显示返回按钮", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const backBtn = page.locator("button").first();
+    await expect(backBtn).toBeVisible();
   });
 });
 

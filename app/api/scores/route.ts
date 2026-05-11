@@ -18,15 +18,16 @@ export async function GET(request: Request) {
   const gridSize = searchParams.get("gridSize");
   const targetCount = searchParams.get("targetCount");
   const duration = searchParams.get("duration");
+  const targetSize = searchParams.get("targetSize");
 
-  const best = await prisma.score.findFirst({
+  const best = await prisma.personalBest.findFirst({
     where: {
       userId: session.userId,
       ...(gridSize && { gridSize: Number(gridSize) }),
       ...(targetCount && { targetCount: Number(targetCount) }),
       ...(duration && { duration: Number(duration) }),
+      ...(targetSize && { targetSize }),
     },
-    orderBy: { score: "desc" },
   });
 
   return NextResponse.json({ scores, best });
@@ -40,7 +41,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { score, hits, totalClicks, hitRate, reactionAvg, gridSize, targetCount, duration } = body;
+    const { score, hits, totalClicks, hitRate, reactionAvg, gridSize, targetCount, duration, targetSize } = body;
+
+    const { shotHits } = body;
 
     const record = await prisma.score.create({
       data: {
@@ -53,21 +56,42 @@ export async function POST(request: Request) {
         gridSize: gridSize ?? 3,
         targetCount: targetCount ?? 3,
         duration: duration ?? 30,
+        targetSize: targetSize ?? "default",
+        ...(shotHits?.length > 0 && {
+          shotHits: {
+            create: shotHits.map((h: { offsetX: number; offsetY: number }) => ({
+              offsetX: h.offsetX,
+              offsetY: h.offsetY,
+            })),
+          },
+        }),
       },
     });
 
-    // Check if new personal best (per settings combination)
-    const best = await prisma.score.findFirst({
-      where: {
-        userId: session.userId,
-        gridSize: record.gridSize,
-        targetCount: record.targetCount,
-        duration: record.duration,
-      },
-      orderBy: { score: "desc" },
-    });
+    // Upsert PersonalBest — only updates if new score is higher
+    const resolvedGridSize = record.gridSize;
+    const resolvedTargetCount = record.targetCount;
+    const resolvedDuration = record.duration;
+    const resolvedTargetSize = record.targetSize;
 
-    return NextResponse.json({ score: record, isNewBest: best?.id === record.id });
+    const affected = await prisma.$executeRaw`
+      INSERT INTO "PersonalBest" (
+        "userId","score","hits","totalClicks","hitRate","reactionAvg",
+        "gridSize","targetCount","duration","targetSize","createdAt","updatedAt"
+      ) VALUES (
+        ${session.userId}, ${score}, ${hits}, ${totalClicks}, ${hitRate}, ${reactionAvg ?? null},
+        ${resolvedGridSize}, ${resolvedTargetCount}, ${resolvedDuration}, ${resolvedTargetSize}, NOW(), NOW()
+      )
+      ON CONFLICT ("userId","gridSize","targetCount","duration","targetSize")
+      DO UPDATE SET
+        "score" = EXCLUDED."score", "hits" = EXCLUDED."hits",
+        "totalClicks" = EXCLUDED."totalClicks", "hitRate" = EXCLUDED."hitRate",
+        "reactionAvg" = EXCLUDED."reactionAvg", "createdAt" = EXCLUDED."createdAt",
+        "updatedAt" = NOW()
+      WHERE "PersonalBest"."score" < EXCLUDED."score"
+    `;
+
+    return NextResponse.json({ score: record, isNewBest: affected > 0 });
   } catch {
     return NextResponse.json({ error: "保存失败" }, { status: 500 });
   }

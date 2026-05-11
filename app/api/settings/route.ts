@@ -29,7 +29,7 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    const { sensitivity, duration, gridSize, targetCount } = body;
+    const { sensitivity, duration, gridSize, targetCount, crosshairSize, crosshairStyle, targetSize } = body;
 
     const settings = await prisma.settings.upsert({
       where: { userId: session.userId },
@@ -38,13 +38,19 @@ export async function PUT(request: Request) {
         ...(duration !== undefined && { duration }),
         ...(gridSize !== undefined && { gridSize }),
         ...(targetCount !== undefined && { targetCount }),
+        ...(crosshairSize !== undefined && { crosshairSize }),
+        ...(crosshairStyle !== undefined && { crosshairStyle }),
+        ...(targetSize !== undefined && { targetSize }),
       },
       create: {
         userId: session.userId,
-        sensitivity: sensitivity ?? 2.5,
+        sensitivity: sensitivity ?? 1.0,
         duration: duration ?? 30,
         gridSize: gridSize ?? 3,
         targetCount: targetCount ?? 3,
+        crosshairSize: crosshairSize ?? 24,
+        crosshairStyle: crosshairStyle ?? "cross",
+        targetSize: targetSize ?? "default",
       },
     });
 

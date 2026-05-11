@@ -8,7 +8,9 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Settings, LogOut, User as UserIcon } from "lucide-react";
+import { Settings, LogOut, User as UserIcon, History, Trophy } from "lucide-react";
+import { CrosshairSettings } from "@/components/CrosshairSettings";
+import { TargetSizeSettings } from "@/components/TargetSizeSettings";
 
 interface AuthUser {
   id: number;
@@ -30,6 +32,13 @@ interface IdleScreenProps {
   setTempGridSize: (v: number) => void;
   setTempTargetCount: (v: number) => void;
   setTempDuration: (v: number) => void;
+  // 准星/目标设置
+  tempCrosshairSize: number;
+  tempCrosshairStyle: string;
+  tempTargetSize: string;
+  setTempCrosshairSize: (v: number) => void;
+  setTempCrosshairStyle: (v: string) => void;
+  setTempTargetSize: (v: string) => void;
   // 用户
   user: AuthUser | null;
   onLogout: () => void;
@@ -50,6 +59,12 @@ export function IdleScreen({
   setTempGridSize,
   setTempTargetCount,
   setTempDuration,
+  tempCrosshairSize,
+  tempCrosshairStyle,
+  tempTargetSize,
+  setTempCrosshairSize,
+  setTempCrosshairStyle,
+  setTempTargetSize,
   user,
   onLogout,
   onShowAuth,
@@ -100,19 +115,43 @@ export function IdleScreen({
 
       {/* 开始测试按钮 */}
       {!showSettings && (
-        <Button
-          variant="outline"
-          size="lg"
-          className="cursor-pointer border-foreground/10 text-base"
-          onClick={onStart}
-        >
-          开始测试
-        </Button>
+        <div className="flex flex-col items-center gap-3">
+          <Button
+            variant="outline"
+            size="lg"
+            className="cursor-pointer border-foreground/10 text-base"
+            onClick={onStart}
+          >
+            开始测试
+          </Button>
+          <div className="flex gap-2">
+            {user && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="cursor-pointer text-muted-foreground"
+                onClick={() => (window.location.href = "/history")}
+              >
+                <History className="size-4 mr-1" />
+                历史成绩
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="cursor-pointer text-muted-foreground"
+              onClick={() => (window.location.href = "/leaderboard")}
+            >
+              <Trophy className="size-4 mr-1" />
+              排行榜
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* 设置面板 */}
       {showSettings && (
-        <Card className="w-80">
+        <Card className="w-auto">
           <CardHeader>
             <CardTitle>设置</CardTitle>
           </CardHeader>
@@ -192,6 +231,16 @@ export function IdleScreen({
                 ))}
               </div>
             </div>
+            <TargetSizeSettings
+              value={tempTargetSize}
+              onChange={setTempTargetSize}
+            />
+            <CrosshairSettings
+              size={tempCrosshairSize}
+              style={tempCrosshairStyle}
+              onSizeChange={setTempCrosshairSize}
+              onStyleChange={setTempCrosshairStyle}
+            />
           </CardContent>
           <CardFooter className="gap-2">
             <Button

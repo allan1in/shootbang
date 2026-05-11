@@ -11,7 +11,9 @@ type GameState = "idle" | "playing" | "finished";
 
 const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
-const TARGET_SIZE = 0.6;
+// 极大直径 = 网格间距(1.5) 的 90% → 半径 0.675，其余等距递减
+const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
+const DEFAULT_TARGET_SIZE = 0.405;
 
 interface UseGameLogicDeps {
   targetsRef: React.MutableRefObject<TargetState[]>;
@@ -23,6 +25,7 @@ interface UseGameLogicDeps {
   targetCountRef: React.MutableRefObject<number>;
   durationRef: React.MutableRefObject<number>;
   sensitivityRef: React.MutableRefObject<number>;
+  targetSizeRef: React.MutableRefObject<string>;
 }
 
 export function useGameLogic(deps: UseGameLogicDeps) {
@@ -36,6 +39,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     targetCountRef,
     durationRef,
     sensitivityRef,
+    targetSizeRef,
   } = deps;
 
   const [gameState, setGameState] = useState<GameState>("idle");
@@ -48,6 +52,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [reactionTimes, setReactionTimes] = useState<number[]>([]);
   const [isNewBest, setIsNewBest] = useState(false);
+  const shotHitsRef = useRef<{ offsetX: number; offsetY: number }[]>([]);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
 
@@ -100,6 +105,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     setIsPaused(false);
     setIsNewBest(false);
     setReactionTimes([]);
+    shotHitsRef.current = [];
 
     /* eslint-disable react-hooks/immutability */
     for (const t of targetsRef.current) {
@@ -107,7 +113,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       t.gridIndex = -1;
     }
     const count = Math.min(targetCountRef.current, targetsRef.current.length);
-    const s = TARGET_SIZE / 0.4;
+    const targetSize = TARGET_SIZE_MAP[targetSizeRef.current] ?? DEFAULT_TARGET_SIZE;
+    const s = targetSize / 0.4;
     for (let i = 0; i < count; i++) {
       targetsRef.current[i].mesh.scale.setScalar(s);
       spawnTarget(
@@ -217,8 +224,14 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         const hitPoint = intersection.point;
         const center = hitTarget.mesh.position;
         const distance = hitPoint.distanceTo(center);
-        const precision = Math.max(0, 1 - distance / TARGET_SIZE);
+        const currentTargetSize = TARGET_SIZE_MAP[targetSizeRef.current] ?? DEFAULT_TARGET_SIZE;
+        const precision = Math.max(0, 1 - distance / currentTargetSize);
         const points = Math.round(50 + 50 * precision);
+
+        shotHitsRef.current.push({
+          offsetX: hitPoint.x - center.x,
+          offsetY: hitPoint.y - center.y,
+        });
 
         playHitSound();
         setScore((prev) => prev + points);
@@ -313,5 +326,6 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     triggerResume,
     startGame,
     startCountdown,
+    shotHitsRef,
   };
 }

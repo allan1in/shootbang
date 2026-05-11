@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useSyncRef } from "@/hooks/useSyncRef";
 
 type GameState = "idle" | "playing" | "finished";
@@ -20,7 +21,9 @@ interface UseScoreSubmissionDeps {
   gridSize: number;
   targetCount: number;
   duration: number;
+  targetSize: string;
   user: AuthUser | null;
+  shotHitsRef: React.MutableRefObject<{ offsetX: number; offsetY: number }[]>;
 }
 
 export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
@@ -34,7 +37,9 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
     gridSize,
     targetCount,
     duration,
+    targetSize,
     user,
+    shotHitsRef,
   } = deps;
 
   const [isNewBest, setIsNewBest] = useState(false);
@@ -48,6 +53,7 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
   const gridSizeRef = useSyncRef(gridSize);
   const targetCountRef = useSyncRef(targetCount);
   const durationRef = useSyncRef(duration);
+  const targetSizeRef = useSyncRef(targetSize);
   const userRef = useSyncRef(user);
 
   useEffect(() => {
@@ -67,13 +73,23 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
         gridSize: gridSizeRef.current,
         targetCount: targetCountRef.current,
         duration: durationRef.current,
+        targetSize: targetSizeRef.current,
+        shotHits: shotHitsRef.current,
       }),
     })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        if (!res.ok) {
+          toast.error("成绩保存失败，请重新登录");
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data?.isNewBest) setIsNewBest(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        toast.error("成绩保存失败");
+      });
   }, [gameState]);
 
   return { isNewBest, setIsNewBest };

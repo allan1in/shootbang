@@ -30,6 +30,7 @@ export default function GameBoard() {
     targetCountRef: settings.targetCountRef,
     durationRef: settings.durationRef,
     sensitivityRef: settings.sensitivityRef,
+    targetSizeRef: settings.targetSizeRef,
   });
   /* eslint-enable react-hooks/refs */
 
@@ -43,7 +44,9 @@ export default function GameBoard() {
     gridSize: settings.gridSize,
     targetCount: settings.targetCount,
     duration: settings.duration,
+    targetSize: settings.targetSize,
     user: auth.user,
+    shotHitsRef: game.shotHitsRef,
   });
 
   // 动画循环 - 仅在 playing 状态运行
@@ -79,7 +82,12 @@ export default function GameBoard() {
   return (
     <div className="relative w-full h-screen bg-background">
       {/* 准星 */}
-      {game.gameState === "playing" && game.isLocked && <Crosshair />}
+      {game.gameState === "playing" && game.isLocked && (
+        <Crosshair
+          size={settings.crosshairSize}
+          style={settings.crosshairStyle}
+        />
+      )}
 
       {/* HUD */}
       {game.gameState === "playing" && (
@@ -121,6 +129,12 @@ export default function GameBoard() {
           setTempGridSize={settings.setTempGridSize}
           setTempTargetCount={settings.setTempTargetCount}
           setTempDuration={settings.setTempDuration}
+          tempCrosshairSize={settings.tempCrosshairSize}
+          tempCrosshairStyle={settings.tempCrosshairStyle}
+          tempTargetSize={settings.tempTargetSize}
+          setTempCrosshairSize={settings.setTempCrosshairSize}
+          setTempCrosshairStyle={settings.setTempCrosshairStyle}
+          setTempTargetSize={settings.setTempTargetSize}
           user={auth.user}
           onLogout={() => {
             fetch("/api/auth/logout", { method: "POST" }).then(() =>

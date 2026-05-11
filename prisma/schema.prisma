@@ -8,12 +8,13 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-  scores    Score[]
-  settings  Settings?
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
+  password      String
+  createdAt     DateTime       @default(now())
+  scores        Score[]
+  personalBests PersonalBest[]
+  settings      Settings?
 }
 
 model Score {
@@ -27,18 +28,54 @@ model Score {
   gridSize    Int      @default(3)
   targetCount Int      @default(3)
   duration    Int      @default(30)
+  targetSize  String   @default("default")
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
+  shotHits    ShotHit[]
 
   @@index([userId, gridSize, targetCount, duration, score])
 }
 
+model ShotHit {
+  id        Int      @id @default(autoincrement())
+  scoreId   Int
+  score     Score    @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+  offsetX   Float
+  offsetY   Float
+  createdAt DateTime @default(now())
+
+  @@index([scoreId])
+}
+
+model PersonalBest {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  score       Int
+  hits        Int
+  totalClicks Int
+  hitRate     Float
+  reactionAvg Float?
+  gridSize    Int
+  targetCount Int
+  duration    Int
+  targetSize  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gridSize, targetCount, duration, targetSize])
+  @@index([gridSize, targetCount, duration, targetSize, score])
+}
+
 model Settings {
-  id          Int   @id @default(autoincrement())
-  userId      Int   @unique
-  sensitivity Float @default(2.5)
-  duration    Int   @default(30)
-  gridSize    Int   @default(3)
-  targetCount Int   @default(3)
-  user        User  @relation(fields: [userId], references: [id])
+  id             Int    @id @default(autoincrement())
+  userId         Int    @unique
+  sensitivity    Float  @default(1.0)
+  duration       Int    @default(30)
+  gridSize       Int    @default(3)
+  targetCount    Int    @default(3)
+  crosshairSize  Int    @default(24)
+  crosshairStyle String @default("cross")
+  targetSize     String @default("default")
+  user           User   @relation(fields: [userId], references: [id])
 }

@@ -10,12 +10,15 @@ export interface SettingsState {
   gridSize: number;
   targetCount: number;
   duration: number;
+  crosshairSize: number;
+  crosshairStyle: string;
+  targetSize: string;
 }
 
 export function useSettings() {
   const [sensitivity, setSensitivity] = useLocalStorage(
     "shootbang-sensitivity",
-    2.5,
+    1.0,
     parseFloat,
   );
   const [gridSize, setGridSize] = useLocalStorage(
@@ -33,6 +36,21 @@ export function useSettings() {
     30,
     (s) => parseInt(s, 10),
   );
+  const [crosshairSize, setCrosshairSize] = useLocalStorage(
+    "shootbang-crosshairSize",
+    24,
+    (s) => parseInt(s, 10),
+  );
+  const [crosshairStyle, setCrosshairStyle] = useLocalStorage(
+    "shootbang-crosshairStyle",
+    "cross",
+    (s) => s,
+  );
+  const [targetSize, setTargetSize] = useLocalStorage(
+    "shootbang-targetSize",
+    "default",
+    (s) => s,
+  );
 
   const gridPositions = useMemo(
     () => generateGridPositions(gridSize),
@@ -44,6 +62,9 @@ export function useSettings() {
   const gridPositionsRef = useSyncRef(gridPositions);
   const targetCountRef = useSyncRef(targetCount);
   const durationRef = useSyncRef(duration);
+  const crosshairSizeRef = useSyncRef(crosshairSize);
+  const crosshairStyleRef = useSyncRef(crosshairStyle);
+  const targetSizeRef = useSyncRef(targetSize);
 
   // 临时设置状态（设置面板编辑中）
   const [showSettings, setShowSettings] = useState(false);
@@ -51,14 +72,20 @@ export function useSettings() {
   const [tempGridSize, setTempGridSize] = useState(gridSize);
   const [tempTargetCount, setTempTargetCount] = useState(targetCount);
   const [tempDuration, setTempDuration] = useState(duration);
+  const [tempCrosshairSize, setTempCrosshairSize] = useState(crosshairSize);
+  const [tempCrosshairStyle, setTempCrosshairStyle] = useState(crosshairStyle);
+  const [tempTargetSize, setTempTargetSize] = useState(targetSize);
 
   const openSettings = useCallback(() => {
     setTempSensitivity(sensitivity);
     setTempGridSize(gridSize);
     setTempTargetCount(targetCount);
     setTempDuration(duration);
+    setTempCrosshairSize(crosshairSize);
+    setTempCrosshairStyle(crosshairStyle);
+    setTempTargetSize(targetSize);
     setShowSettings(true);
-  }, [sensitivity, gridSize, targetCount, duration]);
+  }, [sensitivity, gridSize, targetCount, duration, crosshairSize, crosshairStyle, targetSize]);
 
   const cancelSettings = useCallback(() => {
     setShowSettings(false);
@@ -70,6 +97,9 @@ export function useSettings() {
       setGridSize(tempGridSize);
       setTargetCount(tempTargetCount);
       setDuration(tempDuration);
+      setCrosshairSize(tempCrosshairSize);
+      setCrosshairStyle(tempCrosshairStyle);
+      setTargetSize(tempTargetSize);
       setShowSettings(false);
       // 同步到后端（已登录时）
       if (user) {
@@ -81,6 +111,9 @@ export function useSettings() {
             duration: tempDuration,
             gridSize: tempGridSize,
             targetCount: tempTargetCount,
+            crosshairSize: tempCrosshairSize,
+            crosshairStyle: tempCrosshairStyle,
+            targetSize: tempTargetSize,
           }),
         }).catch(() => {});
       }
@@ -90,10 +123,16 @@ export function useSettings() {
       tempGridSize,
       tempTargetCount,
       tempDuration,
+      tempCrosshairSize,
+      tempCrosshairStyle,
+      tempTargetSize,
       setSensitivity,
       setGridSize,
       setTargetCount,
       setDuration,
+      setCrosshairSize,
+      setCrosshairStyle,
+      setTargetSize,
     ],
   );
 
@@ -103,8 +142,11 @@ export function useSettings() {
       setDuration(data.duration);
       setGridSize(data.gridSize);
       setTargetCount(data.targetCount);
+      if (data.crosshairSize) setCrosshairSize(data.crosshairSize);
+      if (data.crosshairStyle) setCrosshairStyle(data.crosshairStyle);
+      if (data.targetSize) setTargetSize(data.targetSize);
     },
-    [setSensitivity, setDuration, setGridSize, setTargetCount],
+    [setSensitivity, setDuration, setGridSize, setTargetCount, setCrosshairSize, setCrosshairStyle, setTargetSize],
   );
 
   return {
@@ -113,22 +155,34 @@ export function useSettings() {
     gridSize,
     targetCount,
     duration,
+    crosshairSize,
+    crosshairStyle,
+    targetSize,
     // ref（用于回调中读取最新值）
     sensitivityRef,
     gridPositions,
     gridPositionsRef,
     targetCountRef,
     durationRef,
+    crosshairSizeRef,
+    crosshairStyleRef,
+    targetSizeRef,
     // 设置面板状态
     showSettings,
     tempSensitivity,
     tempGridSize,
     tempTargetCount,
     tempDuration,
+    tempCrosshairSize,
+    tempCrosshairStyle,
+    tempTargetSize,
     setTempSensitivity,
     setTempGridSize,
     setTempTargetCount,
     setTempDuration,
+    setTempCrosshairSize,
+    setTempCrosshairStyle,
+    setTempTargetSize,
     // 操作
     openSettings,
     cancelSettings,
