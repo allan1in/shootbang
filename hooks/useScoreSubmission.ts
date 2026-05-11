@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useSyncRef } from "@/hooks/useSyncRef";
+import { type ShotLogEntry } from "@/lib/analysis";
 
 type GameState = "idle" | "playing" | "finished";
 
@@ -23,7 +24,7 @@ interface UseScoreSubmissionDeps {
   duration: number;
   targetSize: string;
   user: AuthUser | null;
-  shotHitsRef: React.MutableRefObject<{ offsetX: number; offsetY: number }[]>;
+  shotLogRef: React.MutableRefObject<ShotLogEntry[]>;
 }
 
 export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
@@ -39,7 +40,7 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
     duration,
     targetSize,
     user,
-    shotHitsRef,
+    shotLogRef,
   } = deps;
 
   const [isNewBest, setIsNewBest] = useState(false);
@@ -61,6 +62,9 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
     const u = userRef.current;
     if (!u) return;
 
+    // 合并 shotLog 到 shotHits，新增字段写入 ShotHit 表
+    const shotLog = shotLogRef.current;
+
     fetch("/api/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,7 +78,7 @@ export function useScoreSubmission(deps: UseScoreSubmissionDeps) {
         targetCount: targetCountRef.current,
         duration: durationRef.current,
         targetSize: targetSizeRef.current,
-        shotHits: shotHitsRef.current,
+        shotHits: shotLog,
       }),
     })
       .then((res) => {

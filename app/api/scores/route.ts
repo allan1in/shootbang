@@ -59,9 +59,12 @@ export async function POST(request: Request) {
         targetSize: targetSize ?? "default",
         ...(shotHits?.length > 0 && {
           shotHits: {
-            create: shotHits.map((h: { offsetX: number; offsetY: number }) => ({
+            create: shotHits.map((h: { offsetX: number; offsetY: number; reactionTime?: number; points?: number; hit?: boolean }) => ({
               offsetX: h.offsetX,
               offsetY: h.offsetY,
+              reactionTime: h.reactionTime ?? null,
+              points: h.points ?? null,
+              hit: h.hit ?? true,
             })),
           },
         }),

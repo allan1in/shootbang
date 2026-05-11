@@ -37,12 +37,15 @@ model Score {
 }
 
 model ShotHit {
-  id        Int      @id @default(autoincrement())
-  scoreId   Int
-  score     Score    @relation(fields: [scoreId], references: [id], onDelete: Cascade)
-  offsetX   Float
-  offsetY   Float
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  scoreId      Int
+  score        Score    @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+  offsetX      Float
+  offsetY      Float
+  reactionTime Float?
+  points       Int?
+  hit          Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   @@index([scoreId])
 }

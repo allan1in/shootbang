@@ -46,7 +46,7 @@ export default function GameBoard() {
     duration: settings.duration,
     targetSize: settings.targetSize,
     user: auth.user,
-    shotHitsRef: game.shotHitsRef,
+    shotLogRef: game.shotLogRef,
   });
 
   // 动画循环 - 仅在 playing 状态运行
@@ -95,6 +95,8 @@ export default function GameBoard() {
           score={game.score}
           timeLeft={game.timeLeft}
           hitRate={game.hitRate}
+          streak={game.streak}
+          floatingScores={game.floatingScores}
         />
       )}
 
@@ -150,9 +152,17 @@ export default function GameBoard() {
         <FinishedScreen
           score={game.score}
           hits={game.hits}
+          totalClicks={game.totalClicks}
           hitRate={game.hitRate}
           reactionAvg={game.reactionAvg}
           isNewBest={scores.isNewBest}
+          shotLog={game.shotLogRef.current}
+          shotHits={game.shotHitsRef.current}
+          scoreBreakdown={game.scoreBreakdownRef.current}
+          gridSize={settings.gridSize}
+          targetCount={settings.targetCount}
+          duration={settings.duration}
+          targetSize={settings.targetSize}
           onRestart={game.triggerStart}
           onGoHome={() => game.setGameState("idle")}
         />
