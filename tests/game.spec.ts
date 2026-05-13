@@ -319,3 +319,22 @@ test.describe("状态流转", () => {
     expect(await getGameState(page)).toBe("idle");
   });
 });
+
+// ===== 移动端提示 =====
+
+test.describe("移动端提示", () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("显示 PC 访问提示", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+    await expect(
+      page.getByText("本游戏需要鼠标和键盘操作，暂不支持移动设备。")
+    ).toBeVisible();
+  });
+
+  test("不渲染 3D 场景", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("canvas")).not.toBeVisible();
+  });
+});

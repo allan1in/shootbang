@@ -1,5 +1,5 @@
-import GameBoard from "@/components/GameBoard";
+import { MobileGate } from "@/components/MobileGate";
 
 export default function Home() {
-  return <GameBoard />;
+  return <MobileGate />;
 }
