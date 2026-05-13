@@ -1,15 +1,20 @@
 let audioCtx: AudioContext | null = null;
 
-function getCtx(): AudioContext {
+function getCtx(): AudioContext | null {
   if (!audioCtx) {
-    audioCtx = new AudioContext();
+    try {
+      audioCtx = new AudioContext();
+    } catch {
+      return null;
+    }
   }
   return audioCtx;
 }
 
 function playTone(frequency: number, volume: number, duration: number) {
   const ctx = getCtx();
-  if (ctx.state === "suspended") ctx.resume();
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);

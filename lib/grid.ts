@@ -38,6 +38,13 @@ export function generateGridPositions(n: number): [number, number][] {
 }
 
 /**
+ * 隐藏所有目标
+ */
+export function hideAllTargets(targets: TargetState[]) {
+  for (const t of targets) t.mesh.visible = false;
+}
+
+/**
  * 在随机空位生成一个目标
  */
 export function spawnTarget(
@@ -46,7 +53,6 @@ export function spawnTarget(
   gridPositions: [number, number][],
   targetCount: number,
 ) {
-  if (!target) return;
   const active = allTargets.slice(0, targetCount);
   const occupied = new Set(
     active.filter((t) => t.mesh.visible).map((t) => t.gridIndex),

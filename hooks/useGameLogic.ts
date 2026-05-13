@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { toast } from "sonner";
 import { useSyncRef } from "@/hooks/useSyncRef";
 import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
-import { type TargetState, spawnTarget } from "@/lib/grid";
+import { type TargetState, spawnTarget, hideAllTargets } from "@/lib/grid";
 
 type GameState = "idle" | "playing" | "finished";
 
@@ -97,10 +97,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     setIsPaused(false);
 
     /* eslint-disable react-hooks/immutability */
-    for (const t of targetsRef.current) {
-      t.mesh.visible = false;
-      t.gridIndex = -1;
-    }
+    hideAllTargets(targetsRef.current);
+    for (const t of targetsRef.current) t.gridIndex = -1;
     const count = Math.min(targetCountRef.current, targetsRef.current.length);
     const targetSize = TARGET_SIZE_MAP[targetSizeRef.current] ?? DEFAULT_TARGET_SIZE;
     const s = targetSize / 0.4;
@@ -168,6 +166,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   }, [startGame, startCountdown]);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const w = window as unknown as Record<string, unknown>;
     w.__shootbang_test = {
       startGame: () => startGameRef.current(),
@@ -258,13 +257,15 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   useEffect(() => {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
 
+    let tick = 0;
     const timer = setInterval(() => {
       timeLeftRef.current = Math.round((timeLeftRef.current - 0.01) * 100) / 100;
-      setTimeLeft(timeLeftRef.current);
+      if (++tick % 10 === 0) setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
+        setTimeLeft(0);
         gameStateRef.current = "finished";
         setGameState("finished");
-        for (const t of targetsRef.current) t.mesh.visible = false;
+        hideAllTargets(targetsRef.current);
         document.exitPointerLock();
         setIsLocked(false);
         clearInterval(timer);
@@ -282,6 +283,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     isPaused,
     countdown,
     timeLeft,
+    timeLeftRef,
     triggerStart,
     triggerResume,
     startGame,

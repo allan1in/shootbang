@@ -28,7 +28,7 @@ export function useThreeScene() {
     scene.background = new THREE.Color(varToHex(cs, "--background"));
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(73.74, width / height, 0.1, 100);
     camera.position.set(0, 6.5, 12.5);
     camera.rotation.order = "YXZ";
     cameraRef.current = camera;

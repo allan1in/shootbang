@@ -1,22 +1,43 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { test, expect, type Page } from "@playwright/test";
+
+interface TargetInfo {
+  visible: boolean;
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface ShootbangTestAPI {
+  startGame: () => void;
+  startCountdown: () => void;
+  setGameState: (s: string) => void;
+  getGameState: () => string;
+  getTargetsInfo: () => TargetInfo[];
+  getTimeLeft: () => number;
+  getDuration: () => number;
+}
 
 // 测试辅助：通过 window.__shootbang_test 直接控制游戏状态
 async function startGameDirect(page: Page) {
   await page.evaluate(() => {
-    (window as any).__shootbang_test.startGame();
-    (window as any).__shootbang_test.startCountdown();
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    api.startGame();
+    api.startCountdown();
   });
 }
 
 async function setGameState(page: Page, state: string) {
   await page.evaluate((s) => {
-    (window as any).__shootbang_test.setGameState(s);
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    api.setGameState(s);
   }, state);
 }
 
 async function getGameState(page: Page): Promise<string> {
-  return page.evaluate(() => (window as any).__shootbang_test.getGameState());
+  return page.evaluate(() => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    return api.getGameState();
+  });
 }
 
 // 等待 Three.js canvas 加载完成
@@ -148,11 +169,12 @@ test.describe("目标球", () => {
     await waitForCanvas(page);
     await startGameDirect(page);
 
-    const targets = await page.evaluate(() =>
-      (window as any).__shootbang_test.getTargetsInfo(),
-    );
+    const targets = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTargetsInfo();
+    });
     expect(targets.length).toBe(3);
-    const visibleTargets = targets.filter((t: any) => t.visible);
+    const visibleTargets = targets.filter((t) => t.visible);
     expect(visibleTargets.length).toBe(3);
     for (const t of visibleTargets) {
       expect(t.z).toBe(-5);
@@ -167,10 +189,11 @@ test.describe("目标球", () => {
     // 等待 React 重新渲染，动画循环 else 分支隐藏目标球
     await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
 
-    const targets = await page.evaluate(() =>
-      (window as any).__shootbang_test.getTargetsInfo(),
-    );
-    const visibleTargets = targets.filter((t: any) => t.visible);
+    const targets = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTargetsInfo();
+    });
+    const visibleTargets = targets.filter((t) => t.visible);
     expect(visibleTargets.length).toBe(0);
   });
 });

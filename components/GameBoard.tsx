@@ -11,6 +11,7 @@ import { TimerBar } from "@/components/TimerBar";
 import { useSettings } from "@/hooks/useSettings";
 import { useThreeScene } from "@/hooks/useThreeScene";
 import { useGameLogic } from "@/hooks/useGameLogic";
+import { hideAllTargets } from "@/lib/grid";
 
 export default function GameBoard() {
   const settings = useSettings();
@@ -64,9 +65,7 @@ export default function GameBoard() {
       });
     } else {
       renderer.setAnimationLoop(null);
-      /* eslint-disable react-hooks/immutability */
-      for (const t of scene.targetsRef.current) t.mesh.visible = false;
-      /* eslint-enable react-hooks/immutability */
+      hideAllTargets(scene.targetsRef.current);
       renderer.render(sc, camera);
     }
 
@@ -79,7 +78,7 @@ export default function GameBoard() {
     <div className="relative w-full h-screen bg-background">
       {/* 计时进度条 */}
       {game.gameState === "playing" && (
-        <TimerBar timeLeft={game.timeLeft} duration={settings.duration} />
+        <TimerBar timeLeftRef={game.timeLeftRef} duration={settings.duration} />
       )}
 
       {/* 准星 */}
@@ -142,6 +141,7 @@ export default function GameBoard() {
       <div
         ref={scene.containerRef} // eslint-disable-line react-hooks/refs -- 传递 ref 对象本身
         tabIndex={-1}
+        style={{ touchAction: "none" }}
         className={`w-full h-full ${game.isLocked ? "cursor-none" : "cursor-default"}`}
       />
     </div>

@@ -15,14 +15,18 @@ export function useLocalStorage<T>(
     try {
       const saved = localStorage.getItem(key);
       if (saved) return parse(saved);
-    } catch {}
+    } catch {
+      console.warn(`[useLocalStorage] 读取 "${key}" 失败`);
+    }
     return defaultValue;
   });
 
   useEffect(() => {
     try {
       localStorage.setItem(key, String(value));
-    } catch {}
+    } catch {
+      console.warn(`[useLocalStorage] 写入 "${key}" 失败`);
+    }
   }, [key, value]);
 
   return [value, setValue];
