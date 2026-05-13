@@ -4,7 +4,7 @@
 export function varToHex(cs: CSSStyleDeclaration, name: string): number {
   const raw = cs.getPropertyValue(name).trim();
   const m = raw.match(
-    /^oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+%?)\)/,
+    /^oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)/,
   );
   if (m) {
     const L = parseFloat(m[1]);
