@@ -59,7 +59,9 @@ export function useGameLogic(deps: UseGameLogicDeps) {
 
   const hitsRef = useRef(0);
   const shotsRef = useRef(0);
-  const reactionTimesRef = useRef<number[]>([]);
+  const gameStartTimeRef = useRef(0);
+  const lastHitTimeRef = useRef(0);
+  const hitIntervalsRef = useRef<number[]>([]);
   const [gameStats, setGameStats] = useState<GameStats>({
     hits: 0, totalShots: 0, accuracy: 0, avgReactionTime: 0,
   });
@@ -112,7 +114,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     setIsPaused(false);
     hitsRef.current = 0;
     shotsRef.current = 0;
-    reactionTimesRef.current = [];
+    lastHitTimeRef.current = 0;
+    hitIntervalsRef.current = [];
 
     /* eslint-disable react-hooks/immutability */
     hideAllTargets(targetsRef.current);
@@ -243,7 +246,10 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         playHitSound();
         hitTarget.mesh.visible = false;
         hitsRef.current++;
-        reactionTimesRef.current.push(Date.now() - hitTarget.spawnTime);
+        const now = Date.now();
+        const prev = lastHitTimeRef.current || gameStartTimeRef.current;
+        hitIntervalsRef.current.push(now - prev);
+        lastHitTimeRef.current = now;
         spawnTarget(
           hitTarget,
           targetsRef.current,
@@ -280,6 +286,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   useEffect(() => {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
 
+    gameStartTimeRef.current = Date.now();
     let tick = 0;
     const timer = setInterval(() => {
       timeLeftRef.current = Math.round((timeLeftRef.current - 0.01) * 100) / 100;
@@ -291,8 +298,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         const totalShots = shotsRef.current;
         const hits = hitsRef.current;
         const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
-        const avgReactionTime = reactionTimesRef.current.length > 0
-          ? Math.round(reactionTimesRef.current.reduce((a, b) => a + b, 0) / reactionTimesRef.current.length)
+        const avgReactionTime = hitIntervalsRef.current.length > 0
+          ? Math.round(hitIntervalsRef.current.reduce((a, b) => a + b, 0) / hitIntervalsRef.current.length)
           : 0;
         setGameStats({ hits, totalShots, accuracy, avgReactionTime });
         hideAllTargets(targetsRef.current);

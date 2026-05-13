@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,36 @@ export const IdleScreen = React.memo(function IdleScreen({
   tempTargetSize,
   setTempTargetSize,
 }: IdleScreenProps) {
+  const [sensitivityInput, setSensitivityInput] = useState(String(tempSensitivity));
+  const [prevSensitivity, setPrevSensitivity] = useState(tempSensitivity);
+
+  useEffect(() => {
+    if (tempSensitivity !== prevSensitivity) {
+      setSensitivityInput(String(tempSensitivity));
+      setPrevSensitivity(tempSensitivity);
+    }
+  }, [tempSensitivity, prevSensitivity]);
+
+  const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    const dotIndex = val.indexOf(".");
+    if (dotIndex !== -1 && val.length - dotIndex > 3) return;
+    setSensitivityInput(val);
+  };
+
+  const handleSensitivityBlur = () => {
+    const parsed = parseFloat(sensitivityInput);
+    if (isNaN(parsed) || parsed < 0.01) {
+      setSensitivityInput(String(prevSensitivity));
+      setTempSensitivity(prevSensitivity);
+    } else {
+      const clamped = Math.min(10, parsed);
+      const rounded = Math.round(clamped * 100) / 100;
+      setSensitivityInput(String(rounded));
+      setTempSensitivity(rounded);
+    }
+  };
+
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 cursor-default">
       {/* 开始 & 设置按钮 */}
@@ -68,15 +98,9 @@ export const IdleScreen = React.memo(function IdleScreen({
                 min={0.01}
                 max={10}
                 step={0.01}
-                value={tempSensitivity}
-                onChange={(e) =>
-                  setTempSensitivity(
-                    Math.max(
-                      0.01,
-                      Math.min(10, parseFloat(e.target.value) || 0.01),
-                    ),
-                  )
-                }
+                value={sensitivityInput}
+                onChange={handleSensitivityChange}
+                onBlur={handleSensitivityBlur}
                 className="h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>

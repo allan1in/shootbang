@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ShootGrid - 射击网格练习",
-  description: "可配置网格射击练习工具，帮助 FPS 玩家提升瞄准精准度",
+  title: "ShootBang - FPS 热身训练",
+  description: "FPS 热身瞄准训练工具，帮助玩家快速进入状态",
 };
 
 export default function RootLayout({
