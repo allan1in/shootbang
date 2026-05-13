@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
@@ -14,7 +15,10 @@ interface TargetSizeSettingsProps {
   onChange: (v: string) => void;
 }
 
-export function TargetSizeSettings({ value, onChange }: TargetSizeSettingsProps) {
+export const TargetSizeSettings = React.memo(function TargetSizeSettings({
+  value,
+  onChange,
+}: TargetSizeSettingsProps) {
   return (
     <div className="space-y-2">
       <Label className="text-sm">目标大小</Label>
@@ -33,4 +37,4 @@ export function TargetSizeSettings({ value, onChange }: TargetSizeSettingsProps)
       </div>
     </div>
   );
-}
+});

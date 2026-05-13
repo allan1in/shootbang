@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { RotateCcw, Home } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/IconButton";
 import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
 import { IdleScreen } from "@/components/IdleScreen";
 import { CountdownOverlay } from "@/components/CountdownOverlay";
+import { TimerBar } from "@/components/TimerBar";
 import { useSettings } from "@/hooks/useSettings";
 import { useThreeScene } from "@/hooks/useThreeScene";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -29,6 +30,21 @@ export default function GameBoard() {
     targetSizeRef: settings.targetSizeRef,
   });
   /* eslint-enable react-hooks/refs */
+
+  // 稳定回调
+  const handlePauseHome = useCallback(() => {
+    document.exitPointerLock();
+    game.setGameState("idle");
+  }, [game.setGameState]);
+
+  const handlePauseRestart = useCallback(() => {
+    document.exitPointerLock();
+    game.triggerStart();
+  }, [game.triggerStart]);
+
+  const handleFinishedHome = useCallback(() => {
+    game.setGameState("idle");
+  }, [game.setGameState]);
 
   // 动画循环
   useEffect(() => {
@@ -61,6 +77,11 @@ export default function GameBoard() {
 
   return (
     <div className="relative w-full h-screen bg-background">
+      {/* 计时进度条 */}
+      {game.gameState === "playing" && (
+        <TimerBar timeLeft={game.timeLeft} duration={settings.duration} />
+      )}
+
       {/* 准星 */}
       {game.gameState === "playing" && game.isLocked && (
         <Crosshair />
@@ -69,14 +90,8 @@ export default function GameBoard() {
       {/* 暂停提示 */}
       {game.gameState === "playing" && game.isPaused && (
         <PauseOverlay
-          onHome={() => {
-            document.exitPointerLock();
-            game.setGameState("idle");
-          }}
-          onRestart={() => {
-            document.exitPointerLock();
-            game.triggerStart();
-          }}
+          onHome={handlePauseHome}
+          onRestart={handlePauseRestart}
           onResume={game.triggerResume}
         />
       )}
@@ -104,30 +119,24 @@ export default function GameBoard() {
       {game.gameState === "finished" && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 cursor-default">
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon-lg"
-              className="cursor-pointer border-foreground/10"
-              aria-label="再来一局"
+            <IconButton
+              icon={RotateCcw}
+              label="再来一局"
               onClick={game.triggerStart}
-            >
-              <RotateCcw className="size-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-lg"
-              className="cursor-pointer border-foreground/10"
-              aria-label="返回首页"
-              onClick={() => game.setGameState("idle")}
-            >
-              <Home className="size-5" />
-            </Button>
+            />
+            <IconButton
+              icon={Home}
+              label="返回首页"
+              onClick={handleFinishedHome}
+            />
           </div>
         </div>
       )}
 
       {/* 倒计时 */}
-      <CountdownOverlay countdown={game.countdown} />
+      {game.countdown !== null && (
+        <CountdownOverlay countdown={game.countdown} />
+      )}
 
       {/* 3D 场景 */}
       <div

@@ -45,6 +45,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState(30);
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
@@ -92,6 +93,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const startGame = useCallback(() => {
     setGameState("playing");
     timeLeftRef.current = durationRef.current;
+    setTimeLeft(durationRef.current);
     setIsPaused(false);
 
     /* eslint-disable react-hooks/immutability */
@@ -133,29 +135,28 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     tick(3);
   }, []);
 
+  const requestLockAndResume = useCallback(
+    (onLocked: () => void) => {
+      containerRef.current
+        ?.requestPointerLock()
+        .then(() => {
+          onLocked();
+          startCountdown();
+          toast.dismiss();
+          toast.info("按 Esc 退出瞄准模式");
+        })
+        .catch(() => {});
+    },
+    [startCountdown],
+  );
+
   const triggerStart = useCallback(() => {
-    containerRef.current
-      ?.requestPointerLock()
-      .then(() => {
-        startGame();
-        startCountdown();
-        toast.dismiss();
-        toast.info("按 Esc 退出瞄准模式");
-      })
-      .catch(() => {});
-  }, [startGame, startCountdown]);
+    requestLockAndResume(startGame);
+  }, [requestLockAndResume, startGame]);
 
   const triggerResume = useCallback(() => {
-    containerRef.current
-      ?.requestPointerLock()
-      .then(() => {
-        setIsPaused(false);
-        startCountdown();
-        toast.dismiss();
-        toast.info("按 Esc 退出瞄准模式");
-      })
-      .catch(() => {});
-  }, [startCountdown]);
+    requestLockAndResume(() => setIsPaused(false));
+  }, [requestLockAndResume]);
 
   // 测试辅助：暴露游戏控制函数到 window（仅注册一次）
   const startGameRef = useRef(startGame);
@@ -182,6 +183,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
           z: t.mesh.position.z,
         }));
       },
+      getTimeLeft: () => timeLeftRef.current,
+      getDuration: () => durationRef.current,
     };
     return () => {
       delete w.__shootbang_test;
@@ -256,7 +259,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
 
     const timer = setInterval(() => {
-      timeLeftRef.current -= 1;
+      timeLeftRef.current = Math.round((timeLeftRef.current - 0.01) * 100) / 100;
+      setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
         gameStateRef.current = "finished";
         setGameState("finished");
@@ -265,7 +269,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         setIsLocked(false);
         clearInterval(timer);
       }
-    }, 1000);
+    }, 10);
 
     return () => clearInterval(timer);
   }, [gameState, isPaused, countdown]);
@@ -277,6 +281,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     isLocked,
     isPaused,
     countdown,
+    timeLeft,
     triggerStart,
     triggerResume,
     startGame,

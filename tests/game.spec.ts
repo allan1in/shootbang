@@ -117,6 +117,29 @@ test.describe("倒计时", () => {
   });
 });
 
+// ===== 计时进度条 =====
+
+test.describe("计时进度条", () => {
+  test("游戏中显示进度条", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    await startGameDirect(page);
+
+    const progress = page.locator('[data-slot="progress"]');
+    await expect(progress).toBeVisible();
+  });
+
+  test("游戏结束后进度条消失", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    await startGameDirect(page);
+    await setGameState(page, "finished");
+
+    const progress = page.locator('[data-slot="progress"]');
+    await expect(progress).not.toBeVisible();
+  });
+});
+
 // ===== 目标球可见性 =====
 
 test.describe("目标球", () => {
