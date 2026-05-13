@@ -6,13 +6,11 @@ import { toast } from "sonner";
 import { useSyncRef } from "@/hooks/useSyncRef";
 import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
 import { type TargetState, spawnTarget } from "@/lib/grid";
-import { type ShotLogEntry, type ScoreBreakdown } from "@/lib/analysis";
 
 type GameState = "idle" | "playing" | "finished";
 
 const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
-// 极大直径 = 网格间距(1.5) 的 90% → 半径 0.675，其余等距递减
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
 const DEFAULT_TARGET_SIZE = 0.405;
 
@@ -44,23 +42,10 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   } = deps;
 
   const [gameState, setGameState] = useState<GameState>("idle");
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [score, setScore] = useState(0);
-  const [hits, setHits] = useState(0);
-  const [totalClicks, setTotalClicks] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [reactionTimes, setReactionTimes] = useState<number[]>([]);
-  const [isNewBest, setIsNewBest] = useState(false);
-  const [streak, setStreak] = useState(0);
-  const [floatingScores, setFloatingScores] = useState<{ id: number; value: number }[]>([]);
-  const floatingIdRef = useRef(0);
-  const shotHitsRef = useRef<{ offsetX: number; offsetY: number }[]>([]);
-  const shotLogRef = useRef<ShotLogEntry[]>([]);
-  const scoreBreakdownRef = useRef<ScoreBreakdown>({ precisionTotal: 0, reactionTotal: 0, streakBonus: 0, difficultyBonus: 0 });
-  const streakRef = useRef(0);
-  const gameStartTimeRef = useRef(0);
+  const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
 
@@ -106,20 +91,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   // 开始游戏
   const startGame = useCallback(() => {
     setGameState("playing");
-    setTimeLeft(durationRef.current);
-    setScore(0);
-    setHits(0);
-    setTotalClicks(0);
+    timeLeftRef.current = durationRef.current;
     setIsPaused(false);
-    setIsNewBest(false);
-    setReactionTimes([]);
-    setStreak(0);
-    setFloatingScores([]);
-    shotHitsRef.current = [];
-    shotLogRef.current = [];
-    scoreBreakdownRef.current = { precisionTotal: 0, reactionTotal: 0, streakBonus: 0, difficultyBonus: 0 };
-    streakRef.current = 0;
-    gameStartTimeRef.current = Date.now();
 
     /* eslint-disable react-hooks/immutability */
     for (const t of targetsRef.current) {
@@ -200,6 +173,15 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       startCountdown: () => startCountdownRef.current(),
       setGameState: (s: GameState) => setGameState(s),
       getGameState: () => gameStateRef.current,
+      getTargetsInfo: () => {
+        const active = targetsRef.current.slice(0, targetCountRef.current);
+        return active.map((t) => ({
+          visible: t.mesh.visible,
+          x: t.mesh.position.x,
+          y: t.mesh.position.y,
+          z: t.mesh.position.z,
+        }));
+      },
     };
     return () => {
       delete w.__shootbang_test;
@@ -235,70 +217,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       const hitMesh = intersection.object as THREE.Mesh;
       const hitTarget = targetsRef.current.find((t) => t.mesh === hitMesh);
       if (hitTarget) {
-        const hitPoint = intersection.point;
-        const center = hitTarget.mesh.position;
-        const distance = hitPoint.distanceTo(center);
-        const currentTargetSize = TARGET_SIZE_MAP[targetSizeRef.current] ?? DEFAULT_TARGET_SIZE;
-        const precision = Math.max(0, 1 - distance / currentTargetSize);
-        const rt = Date.now() - hitTarget.spawnTime;
-        const validRt = rt > 0 && rt < 10000 ? rt : 0;
-
-        // 新计分公式
-        const precisionPts = Math.round(100 * precision);
-        const reactionFactor = Math.max(0, 1 - (validRt - 150) / 850);
-        const reactionPts = Math.round(50 * reactionFactor);
-
-        // 连击乘数: min(1.5, 1.0 + floor(log2(streak)) * 0.1), streak <= 2 时为 1.0
-        const newStreak = streakRef.current + 1;
-        const streakMultiplier = newStreak <= 2 ? 1.0 : Math.min(1.5, 1.0 + Math.floor(Math.log2(newStreak)) * 0.1);
-
-        // 难度系数: 以 default(0.405) 为基准
-        const difficultyMultiplier = DEFAULT_TARGET_SIZE / currentTargetSize;
-
-        const base = precisionPts + reactionPts;
-        const points = Math.round(base * streakMultiplier * difficultyMultiplier);
-
-        const oX = hitPoint.x - center.x;
-        const oY = hitPoint.y - center.y;
-
-        shotHitsRef.current.push({ offsetX: oX, offsetY: oY });
-        shotLogRef.current.push({
-          offsetX: oX,
-          offsetY: oY,
-          reactionTime: validRt,
-          points,
-          timestamp: Date.now() - gameStartTimeRef.current,
-          hit: true,
-          precisionPts,
-          reactionPts,
-          streakMultiplier,
-          difficultyMultiplier,
-          streak: newStreak,
-        });
-
-        // 更新得分拆解
-        scoreBreakdownRef.current.precisionTotal += precisionPts;
-        scoreBreakdownRef.current.reactionTotal += reactionPts;
-        const baseTotal = scoreBreakdownRef.current.precisionTotal + scoreBreakdownRef.current.reactionTotal;
-        const weightedMultiplier = streakMultiplier * difficultyMultiplier;
-        scoreBreakdownRef.current.streakBonus = Math.round(baseTotal * (weightedMultiplier - 1) * 0.6);
-        scoreBreakdownRef.current.difficultyBonus = Math.round(baseTotal * (weightedMultiplier - 1) * 0.4);
-
         playHitSound();
-        setScore((prev) => prev + points);
-        setHits((prev) => prev + 1);
-        setTotalClicks((prev) => prev + 1);
-        setStreak(newStreak);
-        streakRef.current = newStreak;
-        // 浮动得分动画
-        const fid = floatingIdRef.current++;
-        setFloatingScores((prev) => [...prev, { id: fid, value: points }]);
-        setTimeout(() => {
-          setFloatingScores((prev) => prev.filter((s) => s.id !== fid));
-        }, 1500);
-        if (validRt > 0) {
-          setReactionTimes((prev) => [...prev, validRt]);
-        }
         hitTarget.mesh.visible = false;
         spawnTarget(
           hitTarget,
@@ -309,22 +228,6 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       }
     } else {
       playMissSound();
-      shotLogRef.current.push({
-        offsetX: 0,
-        offsetY: 0,
-        reactionTime: 0,
-        points: 0,
-        timestamp: Date.now() - gameStartTimeRef.current,
-        hit: false,
-        precisionPts: 0,
-        reactionPts: 0,
-        streakMultiplier: 0,
-        difficultyMultiplier: 0,
-        streak: 0,
-      });
-      setStreak(0);
-      streakRef.current = 0;
-      setTotalClicks((prev) => prev + 1);
     }
   }, []);
 
@@ -353,56 +256,30 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          gameStateRef.current = "finished";
-          setGameState("finished");
-          for (const t of targetsRef.current) t.mesh.visible = false;
-          document.exitPointerLock();
-          setIsLocked(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+      timeLeftRef.current -= 1;
+      if (timeLeftRef.current <= 0) {
+        gameStateRef.current = "finished";
+        setGameState("finished");
+        for (const t of targetsRef.current) t.mesh.visible = false;
+        document.exitPointerLock();
+        setIsLocked(false);
+        clearInterval(timer);
+      }
     }, 1000);
 
     return () => clearInterval(timer);
   }, [gameState, isPaused, countdown]);
 
-  const hitRate =
-    totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0;
-
-  const reactionAvg =
-    reactionTimes.length > 0
-      ? Math.round(
-          reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length,
-        )
-      : null;
-
   return {
     gameState,
     gameStateRef,
     setGameState,
-    timeLeft,
-    score,
-    hits,
-    totalClicks,
-    hitRate,
     isLocked,
     isPaused,
     countdown,
-    reactionTimes,
-    reactionAvg,
-    isNewBest,
-    setIsNewBest,
     triggerStart,
     triggerResume,
     startGame,
     startCountdown,
-    shotHitsRef,
-    shotLogRef,
-    streak,
-    floatingScores,
-    scoreBreakdownRef,
   };
 }

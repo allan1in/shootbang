@@ -35,11 +35,11 @@ test.describe("空闲界面", () => {
   });
 
   test("显示开始测试按钮", async ({ page }) => {
-    await expect(page.getByText("开始测试")).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
   });
 
   test("显示设置按钮", async ({ page }) => {
-    await expect(page.locator('[data-slot="button"]').first()).toBeVisible();
+    await expect(page.locator('[data-slot="button"]').nth(1)).toBeVisible();
   });
 
   test("canvas 场景已渲染", async ({ page }) => {
@@ -59,8 +59,8 @@ test.describe("设置面板", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
-    // 点击设置按钮（左上角第一个按钮）
-    await page.locator('[data-slot="button"]').first().click();
+    // 点击设置按钮（第二个按钮）
+    await page.locator('[data-slot="button"]').nth(1).click();
   });
 
   test("打开设置面板显示灵敏度表单", async ({ page }) => {
@@ -83,18 +83,7 @@ test.describe("设置面板", () => {
   test("取消关闭设置面板", async ({ page }) => {
     await page.getByText("取消").click();
     await expect(page.getByText("设置")).not.toBeVisible();
-    await expect(page.getByText("开始测试")).toBeVisible();
-  });
-
-  test("显示准星样式设置", async ({ page }) => {
-    await expect(page.getByText("准星样式")).toBeVisible();
-    await expect(page.getByText("十字")).toBeVisible();
-    await expect(page.getByText("方点")).toBeVisible();
-    await expect(page.getByText("圆点")).toBeVisible();
-  });
-
-  test("显示准星大小设置", async ({ page }) => {
-    await expect(page.getByText("准星大小")).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
   });
 
   test("显示目标大小设置", async ({ page }) => {
@@ -104,16 +93,6 @@ test.describe("设置面板", () => {
     await expect(page.getByRole("button", { name: "默认" })).toBeVisible();
     await expect(page.getByRole("button", { name: "大", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "极大" })).toBeVisible();
-  });
-
-  test("修改准星样式并保存", async ({ page }) => {
-    await page.getByText("圆点").click();
-    await page.getByText("保存").click();
-
-    const saved = await page.evaluate(() =>
-      localStorage.getItem("shootbang-crosshairStyle")
-    );
-    expect(saved).toBe("dot");
   });
 
   test("修改目标大小并保存", async ({ page }) => {
@@ -127,62 +106,68 @@ test.describe("设置面板", () => {
   });
 });
 
-// ===== 游戏中 HUD =====
+// ===== 倒计时 =====
 
-test.describe("游戏中 HUD", () => {
-  test.beforeEach(async ({ page }) => {
+test.describe("倒计时", () => {
+  test("倒计时数字可见", async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
     await startGameDirect(page);
-  });
-
-  test("显示分数卡片", async ({ page }) => {
-    await expect(page.getByText("分数")).toBeVisible();
-  });
-
-  test("显示时间卡片", async ({ page }) => {
-    await expect(page.getByText("时间")).toBeVisible();
-  });
-
-  test("显示准确率卡片", async ({ page }) => {
-    await expect(page.getByText("准确率")).toBeVisible();
-  });
-
-  test("倒计时数字可见", async ({ page }) => {
-    // 倒计时 3-2-1 应该显示
     await expect(page.locator(".text-9xl")).toBeVisible();
   });
 });
 
-// ===== 游戏结束结算 =====
+// ===== 目标球可见性 =====
 
-test.describe("游戏结束结算", () => {
+test.describe("目标球", () => {
+  test("游戏中目标球可见且位置正确", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    await startGameDirect(page);
+
+    const targets = await page.evaluate(() =>
+      (window as any).__shootbang_test.getTargetsInfo(),
+    );
+    expect(targets.length).toBe(3);
+    const visibleTargets = targets.filter((t: any) => t.visible);
+    expect(visibleTargets.length).toBe(3);
+    for (const t of visibleTargets) {
+      expect(t.z).toBe(-5);
+    }
+  });
+
+  test("游戏结束后目标球不可见", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    await startGameDirect(page);
+    await setGameState(page, "finished");
+    // 等待 React 重新渲染，动画循环 else 分支隐藏目标球
+    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
+
+    const targets = await page.evaluate(() =>
+      (window as any).__shootbang_test.getTargetsInfo(),
+    );
+    const visibleTargets = targets.filter((t: any) => t.visible);
+    expect(visibleTargets.length).toBe(0);
+  });
+});
+
+// ===== 游戏结束 =====
+
+test.describe("游戏结束", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
-    // 直接跳到 finished 状态
     await startGameDirect(page);
     await setGameState(page, "finished");
   });
 
-  test("显示总分", async ({ page }) => {
-    await expect(page.getByText("总分")).toBeVisible();
-  });
-
-  test("显示命中数", async ({ page }) => {
-    await expect(page.getByText("命中数")).toBeVisible();
-  });
-
-  test("显示准确率", async ({ page }) => {
-    await expect(page.getByText("准确率")).toBeVisible();
-  });
-
   test("显示再来一局按钮", async ({ page }) => {
-    await expect(page.getByText("再来一局")).toBeVisible();
+    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
   });
 
   test("显示返回首页按钮", async ({ page }) => {
-    await expect(page.getByText("返回首页")).toBeVisible();
+    await expect(page.getByRole("button", { name: "返回首页" })).toBeVisible();
   });
 });
 
@@ -195,9 +180,7 @@ test.describe("再来一局", () => {
     await startGameDirect(page);
     await setGameState(page, "finished");
 
-    // 点击再来一局 — 会调用 triggerStart，但 Pointer Lock 会失败
-    // 所以只验证按钮可点击（不验证游戏是否真正启动）
-    const btn = page.getByText("再来一局");
+    const btn = page.getByRole("button", { name: "再来一局" });
     await expect(btn).toBeVisible();
     await btn.click();
     // triggerStart 需要 pointer lock，headless 模式下会 catch
@@ -214,55 +197,10 @@ test.describe("返回首页", () => {
     await startGameDirect(page);
     await setGameState(page, "finished");
 
-    await page.getByText("返回首页").click();
-    await expect(page.getByText("开始测试")).toBeVisible();
+    await page.getByRole("button", { name: "返回首页" }).click();
+    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
     const state = await getGameState(page);
     expect(state).toBe("idle");
-  });
-});
-
-// ===== 导航链接 =====
-
-test.describe("导航链接", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await waitForCanvas(page);
-  });
-
-  test("显示排行榜链接", async ({ page }) => {
-    await expect(page.getByText("排行榜")).toBeVisible();
-  });
-
-  test("点击排行榜跳转到排行榜页面", async ({ page }) => {
-    await page.getByText("排行榜").click();
-    await page.waitForURL("**/leaderboard");
-    await expect(page.getByText("排行榜")).toBeVisible();
-  });
-});
-
-// ===== 排行榜页面 =====
-
-test.describe("排行榜页面", () => {
-  test("显示时长筛选按钮", async ({ page }) => {
-    await page.goto("/leaderboard");
-    await expect(page.getByText("时长:")).toBeVisible();
-    await expect(page.getByText("15s")).toBeVisible();
-    await expect(page.getByText("30s")).toBeVisible();
-    await expect(page.getByText("60s")).toBeVisible();
-    await expect(page.getByText("120s")).toBeVisible();
-  });
-
-  test("显示网格筛选按钮", async ({ page }) => {
-    await page.goto("/leaderboard");
-    await expect(page.getByText("网格:")).toBeVisible();
-    await expect(page.getByText("3x3")).toBeVisible();
-    await expect(page.getByText("6x6")).toBeVisible();
-  });
-
-  test("显示返回按钮", async ({ page }) => {
-    await page.goto("/leaderboard");
-    const backBtn = page.locator("button").first();
-    await expect(backBtn).toBeVisible();
   });
 });
 
@@ -274,22 +212,21 @@ test.describe("状态流转", () => {
     await waitForCanvas(page);
 
     // 初始 idle
-    await expect(page.getByText("开始测试")).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
     expect(await getGameState(page)).toBe("idle");
 
     // 跳到 playing
     await startGameDirect(page);
-    await expect(page.getByText("分数")).toBeVisible();
-    expect(await getGameState(page)).toBe("playing");
+    await expect.poll(() => getGameState(page)).toBe("playing");
 
     // 跳到 finished
     await setGameState(page, "finished");
-    await expect(page.getByText("总分")).toBeVisible();
+    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
     expect(await getGameState(page)).toBe("finished");
 
     // 返回 idle
-    await page.getByText("返回首页").click();
-    await expect(page.getByText("开始测试")).toBeVisible();
+    await page.getByRole("button", { name: "返回首页" }).click();
+    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
     expect(await getGameState(page)).toBe("idle");
   });
 });

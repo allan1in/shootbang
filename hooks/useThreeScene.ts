@@ -37,14 +37,14 @@ export function useThreeScene() {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.2;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // 灯光
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
 
     const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -54,13 +54,17 @@ export function useThreeScene() {
     mainLight.shadow.mapSize.height = 512;
     scene.add(mainLight);
 
-    const fillLight = new THREE.DirectionalLight(0x6688cc, 0.3);
+    const fillLight = new THREE.DirectionalLight(0x88aacc, 0.6);
     fillLight.position.set(-4, 6, -3);
     scene.add(fillLight);
 
+    const rimLight = new THREE.DirectionalLight(0x88aacc, 0.4);
+    rimLight.position.set(0, 10, -6);
+    scene.add(rimLight);
+
     // 立方体围壁
     const wallColor = varToHex(cs, "--card");
-    const gridColor = varToHex(cs, "--border");
+    const gridColor = 0x2a2a2e;
     const S = 50;
     const WH = 14;
     const gridDiv = 50;
@@ -107,10 +111,11 @@ export function useThreeScene() {
     // 目标球体池
     const MAX_TARGETS = 10;
     const sphereGeometry = new THREE.SphereGeometry(0.4, 32, 32);
+    const sphereColor = 0x9ca3af;
     const sphereMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0066ff,
-      emissive: 0x0066ff,
-      emissiveIntensity: 1.5,
+      color: sphereColor,
+      emissive: sphereColor,
+      emissiveIntensity: 0.3,
       roughness: 0.2,
       metalness: 0.3,
     });
