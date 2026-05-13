@@ -7,6 +7,13 @@ interface TargetInfo {
   z: number;
 }
 
+interface GameStats {
+  hits: number;
+  totalShots: number;
+  accuracy: number;
+  avgReactionTime: number;
+}
+
 interface ShootbangTestAPI {
   startGame: () => void;
   startCountdown: () => void;
@@ -15,6 +22,8 @@ interface ShootbangTestAPI {
   getTargetsInfo: () => TargetInfo[];
   getTimeLeft: () => number;
   getDuration: () => number;
+  getGameStats: () => GameStats;
+  setGameStats: (stats: Partial<GameStats>) => void;
 }
 
 // 测试辅助：通过 window.__shootbang_test 直接控制游戏状态
@@ -38,6 +47,13 @@ async function getGameState(page: Page): Promise<string> {
     const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
     return api.getGameState();
   });
+}
+
+async function setGameStats(page: Page, stats: Partial<GameStats>) {
+  await page.evaluate((s) => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    api.setGameStats(s);
+  }, stats);
 }
 
 // 等待 Three.js canvas 加载完成
@@ -214,6 +230,33 @@ test.describe("游戏结束", () => {
 
   test("显示返回首页按钮", async ({ page }) => {
     await expect(page.getByRole("button", { name: "返回首页" })).toBeVisible();
+  });
+
+  test("显示命中率", async ({ page }) => {
+    await setGameStats(page, { hits: 8, totalShots: 10, accuracy: 80, avgReactionTime: 350 });
+    await expect(page.getByText("80%")).toBeVisible();
+    await expect(page.getByText("命中率")).toBeVisible();
+  });
+
+  test("显示平均反应时间", async ({ page }) => {
+    await setGameStats(page, { hits: 3, totalShots: 5, accuracy: 60, avgReactionTime: 420 });
+    await expect(page.getByText("420ms")).toBeVisible();
+    await expect(page.getByText("平均反应时间")).toBeVisible();
+  });
+
+  test("无射击时显示零值", async ({ page }) => {
+    await expect(page.getByText("0%")).toBeVisible();
+    await expect(page.getByText("0ms")).toBeVisible();
+  });
+
+  test("再来一局重置统计数据", async ({ page }) => {
+    await setGameStats(page, { hits: 8, totalShots: 10, accuracy: 80, avgReactionTime: 350 });
+    await expect(page.getByText("80%")).toBeVisible();
+
+    await page.getByRole("button", { name: "再来一局" }).click();
+    await setGameState(page, "finished");
+    await expect(page.getByText("0%")).toBeVisible();
+    await expect(page.getByText("0ms")).toBeVisible();
   });
 });
 

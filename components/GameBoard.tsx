@@ -8,6 +8,8 @@ import { PauseOverlay } from "@/components/PauseOverlay";
 import { IdleScreen } from "@/components/IdleScreen";
 import { CountdownOverlay } from "@/components/CountdownOverlay";
 import { TimerBar } from "@/components/TimerBar";
+import { FpsCounter } from "@/components/FpsCounter";
+import { ResultStats } from "@/components/ResultStats";
 import { useSettings } from "@/hooks/useSettings";
 import { useThreeScene } from "@/hooks/useThreeScene";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -81,6 +83,9 @@ export default function GameBoard() {
         <TimerBar timeLeftRef={game.timeLeftRef} duration={settings.duration} />
       )}
 
+      {/* 帧率 */}
+      <FpsCounter />
+
       {/* 准星 */}
       {game.gameState === "playing" && game.isLocked && (
         <Crosshair />
@@ -117,17 +122,20 @@ export default function GameBoard() {
       {/* 结束页面 */}
       {game.gameState === "finished" && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 cursor-default">
-          <div className="flex items-center gap-3">
-            <IconButton
-              icon={RotateCcw}
-              label="再来一局"
-              onClick={game.triggerStart}
-            />
-            <IconButton
-              icon={Home}
-              label="返回首页"
-              onClick={handleFinishedHome}
-            />
+          <div className="flex flex-col items-center">
+            <ResultStats stats={game.gameStats} />
+            <div className="flex items-center gap-3">
+              <IconButton
+                icon={RotateCcw}
+                label="再来一局"
+                onClick={game.triggerStart}
+              />
+              <IconButton
+                icon={Home}
+                label="返回首页"
+                onClick={handleFinishedHome}
+              />
+            </div>
           </div>
         </div>
       )}

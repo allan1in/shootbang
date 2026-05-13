@@ -9,6 +9,13 @@ import { type TargetState, spawnTarget, hideAllTargets } from "@/lib/grid";
 
 type GameState = "idle" | "playing" | "finished";
 
+export interface GameStats {
+  hits: number;
+  totalShots: number;
+  accuracy: number;
+  avgReactionTime: number;
+}
+
 const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
@@ -49,6 +56,14 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
+
+  const hitsRef = useRef(0);
+  const shotsRef = useRef(0);
+  const reactionTimesRef = useRef<number[]>([]);
+  const [gameStats, setGameStats] = useState<GameStats>({
+    hits: 0, totalShots: 0, accuracy: 0, avgReactionTime: 0,
+  });
+  const gameStatsRef = useSyncRef(gameStats);
 
   const gameStateRef = useSyncRef(gameState);
   const isPausedRef = useSyncRef(isPaused);
@@ -95,6 +110,9 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     timeLeftRef.current = durationRef.current;
     setTimeLeft(durationRef.current);
     setIsPaused(false);
+    hitsRef.current = 0;
+    shotsRef.current = 0;
+    reactionTimesRef.current = [];
 
     /* eslint-disable react-hooks/immutability */
     hideAllTargets(targetsRef.current);
@@ -184,6 +202,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       },
       getTimeLeft: () => timeLeftRef.current,
       getDuration: () => durationRef.current,
+      getGameStats: () => gameStatsRef.current,
+      setGameStats: (stats: Partial<GameStats>) => setGameStats((prev) => ({ ...prev, ...stats })),
     };
     return () => {
       delete w.__shootbang_test;
@@ -203,6 +223,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     if (countdownTimer.current !== null) return;
     if (!cameraRef.current) return;
 
+    shotsRef.current++;
     raycasterRef.current.setFromCamera(CENTER_SCREEN, cameraRef.current);
 
     const active = targetsRef.current.slice(0, targetCountRef.current);
@@ -221,6 +242,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       if (hitTarget) {
         playHitSound();
         hitTarget.mesh.visible = false;
+        hitsRef.current++;
+        reactionTimesRef.current.push(Date.now() - hitTarget.spawnTime);
         spawnTarget(
           hitTarget,
           targetsRef.current,
@@ -265,6 +288,13 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         setTimeLeft(0);
         gameStateRef.current = "finished";
         setGameState("finished");
+        const totalShots = shotsRef.current;
+        const hits = hitsRef.current;
+        const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
+        const avgReactionTime = reactionTimesRef.current.length > 0
+          ? Math.round(reactionTimesRef.current.reduce((a, b) => a + b, 0) / reactionTimesRef.current.length)
+          : 0;
+        setGameStats({ hits, totalShots, accuracy, avgReactionTime });
         hideAllTargets(targetsRef.current);
         document.exitPointerLock();
         setIsLocked(false);
@@ -288,5 +318,6 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     triggerResume,
     startGame,
     startCountdown,
+    gameStats,
   };
 }
