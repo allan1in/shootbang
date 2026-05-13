@@ -1,10 +1,12 @@
+import React from "react";
+
 const SIZE = 16;
 const HALF = SIZE / 2;
 const THICKNESS = 2;
 const HALF_THICK = THICKNESS / 2;
 const COLOR = "#ffffff";
 
-export function Crosshair() {
+export const Crosshair = React.memo(function Crosshair() {
   return (
     <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center">
       <div className="relative" style={{ width: SIZE, height: SIZE }}>
@@ -31,4 +33,4 @@ export function Crosshair() {
       </div>
     </div>
   );
-}
+});

@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Play, Settings } from "lucide-react";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
+import { IconButton } from "@/components/IconButton";
 
 interface IdleScreenProps {
   showSettings: boolean;
@@ -27,7 +29,7 @@ interface IdleScreenProps {
   setTempTargetSize: (v: string) => void;
 }
 
-export function IdleScreen({
+export const IdleScreen = React.memo(function IdleScreen({
   showSettings,
   onStart,
   onOpenSettings,
@@ -47,23 +49,8 @@ export function IdleScreen({
       {/* 开始 & 设置按钮 */}
       {!showSettings && (
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon-lg"
-            className="cursor-pointer border-foreground/10"
-            aria-label="开始测试"
-            onClick={onStart}
-          >
-            <Play className="size-5" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon-lg"
-            className="cursor-pointer border-foreground/10"
-            onClick={onOpenSettings}
-          >
-            <Settings className="size-5" />
-          </Button>
+          <IconButton icon={Play} label="开始测试" onClick={onStart} />
+          <IconButton icon={Settings} label="设置" onClick={onOpenSettings} />
         </div>
       )}
 
@@ -150,4 +137,4 @@ export function IdleScreen({
       )}
     </div>
   );
-}
+});

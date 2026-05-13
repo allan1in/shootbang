@@ -7,44 +7,21 @@ function getCtx(): AudioContext {
   return audioCtx;
 }
 
-export function playHitSound() {
+function playTone(frequency: number, volume: number, duration: number) {
   const ctx = getCtx();
+  if (ctx.state === "suspended") ctx.resume();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);
   gain.connect(ctx.destination);
-  osc.frequency.value = 880;
+  osc.frequency.value = frequency;
   osc.type = "sine";
-  gain.gain.setValueAtTime(0.15, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+  gain.gain.setValueAtTime(volume, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
   osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.1);
+  osc.stop(ctx.currentTime + duration);
 }
 
-export function playMissSound() {
-  const ctx = getCtx();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = 220;
-  osc.type = "sine";
-  gain.gain.setValueAtTime(0.1, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.05);
-}
-
-export function playCountdownSound() {
-  const ctx = getCtx();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = 440;
-  osc.type = "sine";
-  gain.gain.setValueAtTime(0.12, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.08);
-}
+export const playHitSound = () => playTone(880, 0.15, 0.1);
+export const playMissSound = () => playTone(220, 0.1, 0.05);
+export const playCountdownSound = () => playTone(440, 0.12, 0.08);

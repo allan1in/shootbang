@@ -1,8 +1,12 @@
+import React from "react";
+
 interface CountdownOverlayProps {
   countdown: number | null;
 }
 
-export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
+export const CountdownOverlay = React.memo(function CountdownOverlay({
+  countdown,
+}: CountdownOverlayProps) {
   if (countdown === null) return null;
 
   return (
@@ -12,4 +16,4 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
       </div>
     </div>
   );
-}
+});
