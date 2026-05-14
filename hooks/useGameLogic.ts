@@ -26,7 +26,7 @@ interface UseGameLogicDeps {
   cameraRef: React.MutableRefObject<THREE.PerspectiveCamera | null>;
   raycasterRef: React.MutableRefObject<THREE.Raycaster>;
   mouseAccum: React.MutableRefObject<{ x: number; y: number }>;
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLCanvasElement | null>;
   gridPositionsRef: React.MutableRefObject<[number, number][]>;
   targetCountRef: React.MutableRefObject<number>;
   durationRef: React.MutableRefObject<number>;

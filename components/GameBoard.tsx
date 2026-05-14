@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
+import type { RootState } from "@react-three/fiber";
 import { RotateCcw, Home } from "lucide-react";
 import { IconButton } from "@/components/IconButton";
 import { Crosshair } from "@/components/Crosshair";
@@ -11,28 +12,27 @@ import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
 import { ResultStats } from "@/components/ResultStats";
 import { useSettings } from "@/hooks/useSettings";
-import { useThreeScene } from "@/hooks/useThreeScene";
+import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
-import { hideAllTargets } from "@/lib/grid";
+import { SceneCanvas } from "@/components/r3f/SceneCanvas";
+import { toast } from "sonner";
 
 export default function GameBoard() {
   const settings = useSettings();
-  const scene = useThreeScene();
+  const bridge = useR3FBridge();
 
-  /* eslint-disable react-hooks/refs -- 传递 ref 对象本身，非 .current 值 */
   const game = useGameLogic({
-    targetsRef: scene.targetsRef,
-    cameraRef: scene.cameraRef,
-    raycasterRef: scene.raycasterRef,
-    mouseAccum: scene.mouseAccum,
-    containerRef: scene.containerRef,
+    targetsRef: bridge.targetsRef,
+    cameraRef: bridge.cameraRef,
+    raycasterRef: bridge.raycasterRef,
+    mouseAccum: bridge.mouseAccum,
+    containerRef: bridge.canvasRef,
     gridPositionsRef: settings.gridPositionsRef,
     targetCountRef: settings.targetCountRef,
     durationRef: settings.durationRef,
     sensitivityRef: settings.sensitivityRef,
     targetSizeRef: settings.targetSizeRef,
   });
-  /* eslint-enable react-hooks/refs */
 
   // 稳定回调
   const handlePauseHome = useCallback(() => {
@@ -49,32 +49,19 @@ export default function GameBoard() {
     game.setGameState("idle");
   }, [game.setGameState]);
 
-  // 动画循环
-  useEffect(() => {
-    const renderer = scene.rendererRef.current;
-    const camera = scene.cameraRef.current;
-    const sc = scene.sceneRef.current;
-    if (!renderer || !camera || !sc) return;
+  const handleCreated = useCallback(
+    (state: RootState) => {
+      bridge.canvasRef.current = state.gl.domElement; // eslint-disable-line react-hooks/immutability
 
-    if (game.gameState === "playing") {
-      renderer.setAnimationLoop(() => {
-        camera.rotation.y = scene.mouseAccum.current.x;
-        camera.rotation.x = Math.max(
-          -Math.PI / 2,
-          Math.min(Math.PI / 2, scene.mouseAccum.current.y),
-        );
-        renderer.render(sc, camera);
-      });
-    } else {
-      renderer.setAnimationLoop(null);
-      hideAllTargets(scene.targetsRef.current);
-      renderer.render(sc, camera);
-    }
-
-    return () => {
-      renderer.setAnimationLoop(null);
-    };
-  }, [game.gameState]);
+      const canvas = state.gl.domElement;
+      const onLost = (e: Event) => e.preventDefault();
+      const onRestored = () =>
+        toast.error("WebGL context 已恢复，如画面异常请刷新页面");
+      canvas.addEventListener("webglcontextlost", onLost);
+      canvas.addEventListener("webglcontextrestored", onRestored);
+    },
+    [bridge.canvasRef],
+  );
 
   return (
     <div className="relative w-full h-screen bg-background">
@@ -87,9 +74,7 @@ export default function GameBoard() {
       <FpsCounter />
 
       {/* 准星 */}
-      {game.gameState === "playing" && game.isLocked && (
-        <Crosshair />
-      )}
+      {game.gameState === "playing" && game.isLocked && <Crosshair />}
 
       {/* 暂停提示 */}
       {game.gameState === "playing" && game.isPaused && (
@@ -146,11 +131,11 @@ export default function GameBoard() {
       )}
 
       {/* 3D 场景 */}
-      <div
-        ref={scene.containerRef} // eslint-disable-line react-hooks/refs -- 传递 ref 对象本身
-        tabIndex={-1}
-        style={{ touchAction: "none" }}
+      <SceneCanvas
         className={`w-full h-full ${game.isLocked ? "cursor-none" : "cursor-default"}`}
+        onCreated={handleCreated}
+        sceneProvider={bridge.SceneProvider}
+        gameState={game.gameState}
       />
     </div>
   );

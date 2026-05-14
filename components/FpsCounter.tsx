@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 export function FpsCounter() {
   const [fps, setFps] = useState(0);
   const frameRef = useRef(0);
-  const lastRef = useRef(performance.now());
+  const lastRef = useRef(0);
 
   useEffect(() => {
+    lastRef.current = performance.now();
     let raf: number;
     const tick = () => {
       frameRef.current++;
