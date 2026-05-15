@@ -94,10 +94,8 @@ export const IdleScreen = React.memo(function IdleScreen({
       {/* 开始 & 设置按钮 */}
       {!showSettings && !showThemePanel && (
         <div className="flex flex-col items-center gap-6">
-          <div className="text-center space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight">ShootBang</h1>
-            <p className="text-sm text-muted-foreground">在限定时间内尽可能多地命中目标，测试你的反应速度与精准度。</p>
-          </div>
+          <h1 className="text-5xl font-bold tracking-tight">Shootbang</h1>
+          <p className="text-base text-muted-foreground">在限定时间内尽可能多地命中目标，测试你的反应速度与精准度。</p>
           <div className="flex items-center gap-3">
             <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onStart}>
               <Play data-icon="inline-start" className="size-4" />
