@@ -9,7 +9,7 @@ import { useR3FScene } from "@/hooks/useR3FBridge";
 
 // ---- SceneBridge: populates sceneRef/cameraRef from R3F internals ----
 
-export function SceneBridge() {
+export function SceneBridge({ theme }: { theme?: string }) {
   const { scene, camera } = useThree();
   const { sceneRef, cameraRef } = useR3FScene();
 
@@ -19,11 +19,10 @@ export function SceneBridge() {
     camera.rotation.order = "YXZ"; // eslint-disable-line react-hooks/immutability
 
     const cs = getComputedStyle(document.documentElement);
-    const isThunderstorm = document.documentElement.classList.contains("thunderstorm");
-    const bgColor = isThunderstorm ? 0x0a0a0a : varToHex(cs, "--background");
+    const bgColor = theme === "thunderstorm" ? 0x0a0a0a : theme === "blizzard" ? 0xb0b8c0 : varToHex(cs, "--background");
     scene.background = new THREE.Color(bgColor); // eslint-disable-line react-hooks/immutability
-    scene.fog = isThunderstorm ? new THREE.Fog(bgColor, 15, 80) : null;
-  }, [scene, camera, sceneRef, cameraRef]);
+    scene.fog = theme === "thunderstorm" ? new THREE.Fog(bgColor, 15, 80) : theme === "blizzard" ? new THREE.Fog(bgColor, 3, 80) : null;
+  }, [scene, camera, sceneRef, cameraRef, theme]);
 
   return null;
 }
@@ -103,6 +102,8 @@ const GRID_COLOR = 0x2a2a2e;
 
 export function RoomWalls({ theme }: { theme?: string }) {
   const isStorm = theme === "thunderstorm";
+  const isBlizzard = theme === "blizzard";
+  const isWeatherTheme = isStorm || isBlizzard;
   const wallColor = useMemo(() => {
     if (isStorm) return 0x111111;
     const cs = getComputedStyle(document.documentElement);
@@ -112,8 +113,8 @@ export function RoomWalls({ theme }: { theme?: string }) {
   return (
     <group>
       {WALLS.map((w, i) => {
-        // 雷暴主题下隐藏所有墙面
-        if (isStorm) return null;
+        // 天气主题下隐藏所有墙面
+        if (isWeatherTheme) return null;
         const size = w.size;
         return (
           <group key={i}>
@@ -125,8 +126,8 @@ export function RoomWalls({ theme }: { theme?: string }) {
               <planeGeometry args={size as [number, number]} />
               <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.1} />
             </mesh>
-            {/* 雷暴主题下隐藏网格线 */}
-            {!isStorm && (
+            {/* 天气主题下隐藏网格线 */}
+            {!isWeatherTheme && (
               <gridHelper
                 args={[50, 50, GRID_COLOR, GRID_COLOR]}
                 position={w.gridPos}

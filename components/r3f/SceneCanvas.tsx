@@ -5,6 +5,7 @@ import { Canvas, type RootState } from "@react-three/fiber";
 import * as THREE from "three";
 import { SceneBridge, CameraController, SceneLights, RoomWalls, TargetPool } from "./SceneSetup";
 import { Thunderstorm } from "./Thunderstorm";
+import { Blizzard } from "./Blizzard";
 
 interface SceneCanvasProps {
   className?: string;
@@ -39,12 +40,13 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
       style={{ touchAction: "none" }}
     >
       <SceneProvider>
-        <SceneBridge />
+        <SceneBridge theme={theme} />
         <CameraController />
         <SceneLights />
         <RoomWalls theme={theme} />
         <TargetPool gameState={gameState ?? "idle"} />
         {theme === "thunderstorm" && <Thunderstorm />}
+        {theme === "blizzard" && <Blizzard />}
         {children}
       </SceneProvider>
     </Canvas>

@@ -33,7 +33,7 @@ export default function GameBoard() {
 
   // 主题面板状态
   const [showThemePanel, setShowThemePanel] = useState(false);
-  const [tempTheme, setTempTheme] = useState<Theme>(theme);
+  const [tempTheme, setTempTheme] = useState<"default" | "thunderstorm" | "blizzard">(theme);
 
   const openTheme = useCallback(() => {
     setTempTheme(theme);

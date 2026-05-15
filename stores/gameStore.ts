@@ -82,7 +82,7 @@ export const useGameStore = create<GameStateStore>()((set) => ({
 
 // ============ Theme ============
 
-export type Theme = "default" | "thunderstorm";
+export type Theme = "default" | "thunderstorm" | "blizzard";
 
 interface ThemeState {
   theme: Theme;

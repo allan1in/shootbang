@@ -30,8 +30,8 @@ interface IdleScreenProps {
   onOpenTheme: () => void;
   onCancelTheme: () => void;
   onSaveTheme: () => void;
-  tempTheme: "default" | "thunderstorm";
-  setTempTheme: (v: "default" | "thunderstorm") => void;
+  tempTheme: "default" | "thunderstorm" | "blizzard";
+  setTempTheme: (v: "default" | "thunderstorm" | "blizzard") => void;
   muted: boolean;
   onToggleMute: () => void;
 }
@@ -126,7 +126,8 @@ export const IdleScreen = React.memo(function IdleScreen({
           <CardContent className="space-y-2">
             {([
               { key: "default" as const, name: "默认", desc: "经典网格" },
-              { key: "thunderstorm" as const, name: "雷暴", desc: "闪电会干扰视线" },
+              { key: "thunderstorm" as const, name: "雷暴", desc: "小心闪电" },
+              { key: "blizzard" as const, name: "暴雪", desc: "寒风呼啸" },
             ]).map((t) => (
               <button
                 key={t.key}

@@ -13,8 +13,12 @@ export function useTheme() {
     const root = document.documentElement;
     if (theme === "thunderstorm") {
       root.classList.add("thunderstorm");
-    } else {
+      root.classList.remove("blizzard");
+    } else if (theme === "blizzard") {
+      root.classList.add("blizzard");
       root.classList.remove("thunderstorm");
+    } else {
+      root.classList.remove("thunderstorm", "blizzard");
     }
   }, [theme]);
 
