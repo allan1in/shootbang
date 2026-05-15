@@ -9,7 +9,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Play, Settings } from "lucide-react";
+import { Play, Settings, Palette } from "lucide-react";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
 import { IconButton } from "@/components/IconButton";
 
@@ -27,6 +27,12 @@ interface IdleScreenProps {
   setTempDuration: (v: number) => void;
   tempTargetSize: string;
   setTempTargetSize: (v: string) => void;
+  showThemePanel: boolean;
+  onOpenTheme: () => void;
+  onCancelTheme: () => void;
+  onSaveTheme: () => void;
+  tempTheme: "default" | "thunderstorm";
+  setTempTheme: (v: "default" | "thunderstorm") => void;
 }
 
 export const IdleScreen = React.memo(function IdleScreen({
@@ -43,6 +49,12 @@ export const IdleScreen = React.memo(function IdleScreen({
   setTempDuration,
   tempTargetSize,
   setTempTargetSize,
+  showThemePanel,
+  onOpenTheme,
+  onCancelTheme,
+  onSaveTheme,
+  tempTheme,
+  setTempTheme,
 }: IdleScreenProps) {
   const [sensitivityInput, setSensitivityInput] = useState(String(tempSensitivity));
   const [prevSensitivity, setPrevSensitivity] = useState(tempSensitivity);
@@ -77,16 +89,66 @@ export const IdleScreen = React.memo(function IdleScreen({
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 cursor-default">
       {/* 开始 & 设置按钮 */}
-      {!showSettings && (
+      {!showSettings && !showThemePanel && (
         <div className="flex items-center gap-3">
+          <IconButton
+            icon={Palette}
+            label="主题"
+            onClick={onOpenTheme}
+          />
           <IconButton icon={Play} label="开始测试" onClick={onStart} />
           <IconButton icon={Settings} label="设置" onClick={onOpenSettings} />
         </div>
       )}
 
+      {/* 主题面板 */}
+      {showThemePanel && (
+        <Card className="w-auto min-w-64">
+          <CardHeader>
+            <CardTitle>主题</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {([
+              { key: "default" as const, name: "默认", desc: "经典暗色主题" },
+              { key: "thunderstorm" as const, name: "暴雨", desc: "雷雨交加，沉浸体验" },
+            ]).map((t) => (
+              <button
+                key={t.key}
+                className="w-full flex items-center gap-3 rounded-md border border-foreground/10 px-3 py-2 text-left cursor-pointer transition-colors hover:bg-accent"
+                onClick={() => setTempTheme(t.key)}
+              >
+                <div className={`size-4 rounded-full border-2 shrink-0 flex items-center justify-center ${tempTheme === t.key ? "border-primary" : "border-muted-foreground/30"}`}>
+                  {tempTheme === t.key && <div className="size-2 rounded-full bg-primary" />}
+                </div>
+                <div>
+                  <div className="text-sm font-medium">{t.name}</div>
+                  <div className="text-xs text-muted-foreground">{t.desc}</div>
+                </div>
+              </button>
+            ))}
+          </CardContent>
+          <CardFooter className="gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 cursor-pointer border-foreground/10"
+              onClick={onCancelTheme}
+            >
+              取消
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 cursor-pointer border-foreground/10"
+              onClick={onSaveTheme}
+            >
+              保存
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
       {/* 设置面板 */}
       {showSettings && (
-        <Card className="w-auto">
+        <Card className="w-auto min-w-64">
           <CardHeader>
             <CardTitle>设置</CardTitle>
           </CardHeader>

@@ -1,13 +1,29 @@
 let audioCtx: AudioContext | null = null;
 
-function getCtx(): AudioContext | null {
-  if (!audioCtx) {
-    try {
-      audioCtx = new AudioContext();
-    } catch {
-      return null;
+if (typeof window !== "undefined") {
+  const init = () => {
+    if (!audioCtx) {
+      try {
+        audioCtx = new AudioContext();
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume().catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
     }
-  }
+  };
+
+  const onFirstGesture = () => {
+    init();
+    document.removeEventListener("pointerdown", onFirstGesture);
+    document.removeEventListener("keydown", onFirstGesture);
+  };
+  document.addEventListener("pointerdown", onFirstGesture);
+  document.addEventListener("keydown", onFirstGesture);
+}
+
+export function getCtx(): AudioContext | null {
   return audioCtx;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useState, useCallback } from "react";
 import type { RootState } from "@react-three/fiber";
 import { RotateCcw, Home } from "lucide-react";
 import { IconButton } from "@/components/IconButton";
@@ -14,12 +14,32 @@ import { ResultStats } from "@/components/ResultStats";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
+import { useTheme, type Theme } from "@/hooks/useTheme";
 import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
 
 export default function GameBoard() {
   const settings = useSettings();
   const bridge = useR3FBridge();
+  const { theme, setTheme } = useTheme();
+
+  // 主题面板状态
+  const [showThemePanel, setShowThemePanel] = useState(false);
+  const [tempTheme, setTempTheme] = useState<Theme>(theme);
+
+  const openTheme = useCallback(() => {
+    setTempTheme(theme);
+    setShowThemePanel(true);
+  }, [theme]);
+
+  const cancelTheme = useCallback(() => {
+    setShowThemePanel(false);
+  }, []);
+
+  const saveTheme = useCallback(() => {
+    setTheme(tempTheme);
+    setShowThemePanel(false);
+  }, [tempTheme, setTheme]);
 
   const game = useGameLogic({
     targetsRef: bridge.targetsRef,
@@ -101,6 +121,12 @@ export default function GameBoard() {
           setTempDuration={settings.setTempDuration}
           tempTargetSize={settings.tempTargetSize}
           setTempTargetSize={settings.setTempTargetSize}
+          showThemePanel={showThemePanel}
+          onOpenTheme={openTheme}
+          onCancelTheme={cancelTheme}
+          onSaveTheme={saveTheme}
+          tempTheme={tempTheme}
+          setTempTheme={setTempTheme}
         />
       )}
 
@@ -136,6 +162,7 @@ export default function GameBoard() {
         onCreated={handleCreated}
         sceneProvider={bridge.SceneProvider}
         gameState={game.gameState}
+        theme={theme}
       />
     </div>
   );

@@ -76,7 +76,7 @@ test.describe("空闲界面", () => {
   });
 
   test("显示设置按钮", async ({ page }) => {
-    await expect(page.locator('[data-slot="button"]').nth(1)).toBeVisible();
+    await expect(page.locator('[data-slot="button"]').nth(2)).toBeVisible();
   });
 
   test("canvas 场景已渲染", async ({ page }) => {
@@ -96,8 +96,8 @@ test.describe("设置面板", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
-    // 点击设置按钮（第二个按钮）
-    await page.locator('[data-slot="button"]').nth(1).click();
+    // 点击设置按钮（第三个按钮）
+    await page.locator('[data-slot="button"]').nth(2).click();
   });
 
   test("打开设置面板显示灵敏度表单", async ({ page }) => {

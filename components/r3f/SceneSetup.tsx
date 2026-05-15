@@ -19,7 +19,10 @@ export function SceneBridge() {
     camera.rotation.order = "YXZ"; // eslint-disable-line react-hooks/immutability
 
     const cs = getComputedStyle(document.documentElement);
-    scene.background = new THREE.Color(varToHex(cs, "--background")); // eslint-disable-line react-hooks/immutability
+    const isThunderstorm = document.documentElement.classList.contains("thunderstorm");
+    const bgColor = isThunderstorm ? 0x0a0a0a : varToHex(cs, "--background");
+    scene.background = new THREE.Color(bgColor); // eslint-disable-line react-hooks/immutability
+    scene.fog = isThunderstorm ? new THREE.Fog(bgColor, 15, 80) : null;
   }, [scene, camera, sceneRef, cameraRef]);
 
   return null;
@@ -46,21 +49,27 @@ export function CameraController() {
   return null;
 }
 
-// ---- SceneLights: 4 lights matching original setup ----
+// ---- SceneLights: realistic room lighting ----
 
 export function SceneLights() {
   return (
     <>
-      <ambientLight intensity={0.4} />
+      {/* 天空/地面梯度：天花板偏亮偏冷，地板方向偏暗偏暖 */}
+      <hemisphereLight args={[0x8899bb, 0x443322, 0.5]} />
+      {/* 主光：右上前方，负责照亮目标球 + 投射阴影 */}
       <directionalLight
         position={[3, 8, 4]}
-        intensity={1.0}
+        intensity={0.9}
         castShadow
         shadow-mapSize-width={512}
         shadow-mapSize-height={512}
       />
-      <directionalLight position={[-4, 6, -3]} intensity={0.6} color={0x88aacc} />
-      <directionalLight position={[0, 10, -6]} intensity={0.4} color={0x88aacc} />
+      {/* 补光：左后方冷色，模拟窗户/天空反射 */}
+      <directionalLight position={[-4, 6, -3]} intensity={0.4} color={0x88aacc} />
+      {/* 补光：正上方偏后 */}
+      <directionalLight position={[0, 10, -6]} intensity={0.3} color={0x99bbdd} />
+      {/* 地面反射：从下方向上微弱暖光，模拟地板弹射光 */}
+      <directionalLight position={[0, -2, 8]} intensity={0.15} color={0x554433} />
     </>
   );
 }
@@ -92,31 +101,41 @@ const WALLS: WallDef[] = [
 
 const GRID_COLOR = 0x2a2a2e;
 
-export function RoomWalls() {
+export function RoomWalls({ theme }: { theme?: string }) {
+  const isStorm = theme === "thunderstorm";
   const wallColor = useMemo(() => {
+    if (isStorm) return 0x111111;
     const cs = getComputedStyle(document.documentElement);
     return varToHex(cs, "--card");
-  }, []);
+  }, [isStorm]);
 
   return (
     <group>
-      {WALLS.map((w, i) => (
-        <group key={i}>
-          <mesh
-            position={w.pos}
-            rotation={w.rot}
-            receiveShadow
-          >
-            <planeGeometry args={w.size} />
-            <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.1} />
-          </mesh>
-          <gridHelper
-            args={[50, 50, GRID_COLOR, GRID_COLOR]}
-            position={w.gridPos}
-            rotation={w.gridRot}
-          />
-        </group>
-      ))}
+      {WALLS.map((w, i) => {
+        // 雷暴主题下隐藏所有墙面
+        if (isStorm) return null;
+        const size = w.size;
+        return (
+          <group key={i}>
+            <mesh
+              position={w.pos}
+              rotation={w.rot}
+              receiveShadow
+            >
+              <planeGeometry args={size as [number, number]} />
+              <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.1} />
+            </mesh>
+            {/* 雷暴主题下隐藏网格线 */}
+            {!isStorm && (
+              <gridHelper
+                args={[50, 50, GRID_COLOR, GRID_COLOR]}
+                position={w.gridPos}
+                rotation={w.gridRot}
+              />
+            )}
+          </group>
+        );
+      })}
     </group>
   );
 }

@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { Canvas, type RootState } from "@react-three/fiber";
 import * as THREE from "three";
 import { SceneBridge, CameraController, SceneLights, RoomWalls, TargetPool } from "./SceneSetup";
+import { Thunderstorm } from "./Thunderstorm";
 
 interface SceneCanvasProps {
   className?: string;
@@ -11,12 +12,12 @@ interface SceneCanvasProps {
   children?: ReactNode;
   sceneProvider: (props: { children: ReactNode }) => ReactNode;
   gameState?: string;
+  theme?: string;
 }
 
-export function SceneCanvas({ className, onCreated, children, sceneProvider: SceneProvider, gameState }: SceneCanvasProps) {
+export function SceneCanvas({ className, onCreated, children, sceneProvider: SceneProvider, gameState, theme }: SceneCanvasProps) {
   return (
     <Canvas
-      shadows
       gl={{
         antialias: true,
         toneMapping: THREE.ACESFilmicToneMapping,
@@ -30,6 +31,7 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
       }}
       dpr={[1, 2]}
       onCreated={(state) => {
+        state.gl.shadowMap.enabled = true;
         state.gl.shadowMap.type = THREE.PCFShadowMap;
         onCreated?.(state);
       }}
@@ -40,8 +42,9 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
         <SceneBridge />
         <CameraController />
         <SceneLights />
-        <RoomWalls />
+        <RoomWalls theme={theme} />
         <TargetPool gameState={gameState ?? "idle"} />
+        {theme === "thunderstorm" && <Thunderstorm />}
         {children}
       </SceneProvider>
     </Canvas>

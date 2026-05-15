@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { type TargetState } from "@/lib/grid";
 
@@ -29,8 +29,8 @@ export function useR3FBridge() {
   const mouseAccum = useRef({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  function SceneProvider({ children }: { children: ReactNode }) {
-    return (
+  const SceneProvider = useCallback(
+    ({ children }: { children: ReactNode }) => (
       <R3FSceneContext.Provider
         value={{
           cameraRef,
@@ -43,8 +43,9 @@ export function useR3FBridge() {
       >
         {children}
       </R3FSceneContext.Provider>
-    );
-  }
+    ),
+    [],
+  );
 
   return {
     cameraRef,
