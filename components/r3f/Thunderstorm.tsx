@@ -57,18 +57,21 @@ function Rain() {
       geo.dispose();
       mat.dispose();
     };
-  }, [scene]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFrame((_, delta) => {
     const mesh = meshRef.current;
     if (!mesh) return;
 
+    // 标签页恢复时 delta 可能很大，限制上限防止雨滴瞬移
+    const dt = Math.min(delta, 0.05);
+
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const p = rainPositions[i];
       const v = rainVelocities[i];
-      p[0] += v[0] * delta;
-      p[1] += v[1] * delta;
-      p[2] += v[2] * delta;
+      p[0] += v[0] * dt;
+      p[1] += v[1] * dt;
+      p[2] += v[2] * dt;
       if (p[1] < ROOM_Y_MIN) {
         p[0] = (Math.random() - 0.5) * ROOM_X * 2;
         p[1] = ROOM_Y_MAX;

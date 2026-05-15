@@ -71,8 +71,8 @@ test.describe("空闲界面", () => {
     await waitForCanvas(page);
   });
 
-  test("显示开始测试按钮", async ({ page }) => {
-    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
+  test("显示开始按钮", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
   });
 
   test("显示设置按钮", async ({ page }) => {
@@ -119,8 +119,8 @@ test.describe("设置面板", () => {
 
   test("取消关闭设置面板", async ({ page }) => {
     await page.getByText("取消").click();
-    await expect(page.getByText("设置")).not.toBeVisible();
-    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "设置" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
   });
 
   test("显示目标大小设置", async ({ page }) => {
@@ -203,7 +203,7 @@ test.describe("目标球", () => {
     await startGameDirect(page);
     await setGameState(page, "finished");
     // 等待 React 重新渲染，动画循环 else 分支隐藏目标球
-    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();
 
     const targets = await page.evaluate(() => {
       const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
@@ -224,8 +224,8 @@ test.describe("游戏结束", () => {
     await setGameState(page, "finished");
   });
 
-  test("显示再来一局按钮", async ({ page }) => {
-    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
+  test("显示重新开始按钮", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();
   });
 
   test("显示返回首页按钮", async ({ page }) => {
@@ -249,27 +249,27 @@ test.describe("游戏结束", () => {
     await expect(page.getByText("0ms")).toBeVisible();
   });
 
-  test("再来一局重置统计数据", async ({ page }) => {
+  test("重新开始重置统计数据", async ({ page }) => {
     await setGameStats(page, { hits: 8, totalShots: 10, accuracy: 80, avgReactionTime: 350 });
     await expect(page.getByText("80%")).toBeVisible();
 
-    await page.getByRole("button", { name: "再来一局" }).click();
+    await page.getByRole("button", { name: "重新开始" }).click();
     await setGameState(page, "finished");
     await expect(page.getByText("0%")).toBeVisible();
     await expect(page.getByText("0ms")).toBeVisible();
   });
 });
 
-// ===== 再来一局 =====
+// ===== 重新开始 =====
 
-test.describe("再来一局", () => {
-  test("点击再来一局重新开始游戏", async ({ page }) => {
+test.describe("重新开始", () => {
+  test("点击重新开始重新开始游戏", async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
     await startGameDirect(page);
     await setGameState(page, "finished");
 
-    const btn = page.getByRole("button", { name: "再来一局" });
+    const btn = page.getByRole("button", { name: "重新开始" });
     await expect(btn).toBeVisible();
     await btn.click();
     // triggerStart 需要 pointer lock，headless 模式下会 catch
@@ -287,7 +287,7 @@ test.describe("返回首页", () => {
     await setGameState(page, "finished");
 
     await page.getByRole("button", { name: "返回首页" }).click();
-    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     const state = await getGameState(page);
     expect(state).toBe("idle");
   });
@@ -301,7 +301,7 @@ test.describe("状态流转", () => {
     await waitForCanvas(page);
 
     // 初始 idle
-    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     expect(await getGameState(page)).toBe("idle");
 
     // 跳到 playing
@@ -310,12 +310,12 @@ test.describe("状态流转", () => {
 
     // 跳到 finished
     await setGameState(page, "finished");
-    await expect(page.getByRole("button", { name: "再来一局" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();
     expect(await getGameState(page)).toBe("finished");
 
     // 返回 idle
     await page.getByRole("button", { name: "返回首页" }).click();
-    await expect(page.getByRole("button", { name: "开始测试" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     expect(await getGameState(page)).toBe("idle");
   });
 });

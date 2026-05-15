@@ -1,6 +1,6 @@
 import React from "react";
 import { Home, Play, RotateCcw } from "lucide-react";
-import { IconButton } from "@/components/IconButton";
+import { Button } from "@/components/ui/button";
 
 interface PauseOverlayProps {
   onHome: () => void;
@@ -16,9 +16,18 @@ export const PauseOverlay = React.memo(function PauseOverlay({
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50">
       <div className="flex items-center gap-3">
-        <IconButton icon={Home} label="返回首页" onClick={onHome} />
-        <IconButton icon={Play} label="继续" onClick={onResume} />
-        <IconButton icon={RotateCcw} label="重新开始" onClick={onRestart} />
+        <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onHome}>
+          <Home data-icon="inline-start" className="size-4" />
+          返回首页
+        </Button>
+        <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onResume}>
+          <Play data-icon="inline-start" className="size-4" />
+          继续
+        </Button>
+        <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onRestart}>
+          <RotateCcw data-icon="inline-start" className="size-4" />
+          重新开始
+        </Button>
       </div>
     </div>
   );

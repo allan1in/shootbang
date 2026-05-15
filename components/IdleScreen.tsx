@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card";
 import { Play, Settings, Palette } from "lucide-react";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
-import { IconButton } from "@/components/IconButton";
 
 interface IdleScreenProps {
   showSettings: boolean;
@@ -91,13 +90,18 @@ export const IdleScreen = React.memo(function IdleScreen({
       {/* 开始 & 设置按钮 */}
       {!showSettings && !showThemePanel && (
         <div className="flex items-center gap-3">
-          <IconButton
-            icon={Palette}
-            label="主题"
-            onClick={onOpenTheme}
-          />
-          <IconButton icon={Play} label="开始测试" onClick={onStart} />
-          <IconButton icon={Settings} label="设置" onClick={onOpenSettings} />
+          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onOpenTheme}>
+            <Palette data-icon="inline-start" className="size-4" />
+            主题
+          </Button>
+          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onStart}>
+            <Play data-icon="inline-start" className="size-4" />
+            开始
+          </Button>
+          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onOpenSettings}>
+            <Settings data-icon="inline-start" className="size-4" />
+            设置
+          </Button>
         </div>
       )}
 
@@ -109,8 +113,8 @@ export const IdleScreen = React.memo(function IdleScreen({
           </CardHeader>
           <CardContent className="space-y-2">
             {([
-              { key: "default" as const, name: "默认", desc: "经典暗色主题" },
-              { key: "thunderstorm" as const, name: "暴雨", desc: "雷雨交加，沉浸体验" },
+              { key: "default" as const, name: "默认", desc: "经典网格" },
+              { key: "thunderstorm" as const, name: "雷暴", desc: "闪电会干扰视线" },
             ]).map((t) => (
               <button
                 key={t.key}

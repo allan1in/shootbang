@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import type { RootState } from "@react-three/fiber";
 import { RotateCcw, Home } from "lucide-react";
-import { IconButton } from "@/components/IconButton";
+import { Button } from "@/components/ui/button";
 import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
 import { IdleScreen } from "@/components/IdleScreen";
@@ -136,16 +136,14 @@ export default function GameBoard() {
           <div className="flex flex-col items-center">
             <ResultStats stats={game.gameStats} />
             <div className="flex items-center gap-3">
-              <IconButton
-                icon={RotateCcw}
-                label="再来一局"
-                onClick={game.triggerStart}
-              />
-              <IconButton
-                icon={Home}
-                label="返回首页"
-                onClick={handleFinishedHome}
-              />
+              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={game.triggerStart}>
+                <RotateCcw data-icon="inline-start" className="size-4" />
+                重新开始
+              </Button>
+              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={handleFinishedHome}>
+                <Home data-icon="inline-start" className="size-4" />
+                返回首页
+              </Button>
             </div>
           </div>
         </div>
