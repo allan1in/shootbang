@@ -1,18 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useThemeStore, type Theme } from "@/stores/gameStore";
 
-export type Theme = "default" | "thunderstorm";
+export type { Theme };
 
 export function useTheme() {
-  const [theme, setTheme] = useLocalStorage<Theme>(
-    "shootbang-theme",
-    "default",
-    (s) => (s === "thunderstorm" ? "thunderstorm" : "default"),
-  );
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
 
-  // Sync class on mount and when theme changes
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "thunderstorm") {

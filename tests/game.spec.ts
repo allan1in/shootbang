@@ -76,7 +76,7 @@ test.describe("空闲界面", () => {
   });
 
   test("显示设置按钮", async ({ page }) => {
-    await expect(page.locator('[data-slot="button"]').nth(2)).toBeVisible();
+    await expect(page.getByRole("button", { name: "设置" })).toBeVisible();
   });
 
   test("canvas 场景已渲染", async ({ page }) => {
@@ -96,8 +96,8 @@ test.describe("设置面板", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
-    // 点击设置按钮（第三个按钮）
-    await page.locator('[data-slot="button"]').nth(2).click();
+    // 点击设置按钮
+    await page.getByRole("button", { name: "设置" }).click();
   });
 
   test("打开设置面板显示灵敏度表单", async ({ page }) => {
@@ -110,11 +110,13 @@ test.describe("设置面板", () => {
     await input.fill("3.5");
     await page.getByText("保存").click();
 
-    // 验证 localStorage
-    const saved = await page.evaluate(() =>
-      localStorage.getItem("shootbang-sensitivity")
-    );
-    expect(saved).toBe("3.5");
+    // 验证 localStorage（Zustand persist 格式）
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem("shootbang-settings");
+      if (!raw) return null;
+      return JSON.parse(raw).state.sensitivity;
+    });
+    expect(saved).toBe(3.5);
   });
 
   test("取消关闭设置面板", async ({ page }) => {
@@ -136,9 +138,11 @@ test.describe("设置面板", () => {
     await page.getByRole("button", { name: "大", exact: true }).click();
     await page.getByText("保存").click();
 
-    const saved = await page.evaluate(() =>
-      localStorage.getItem("shootbang-targetSize")
-    );
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem("shootbang-settings");
+      if (!raw) return null;
+      return JSON.parse(raw).state.targetSize;
+    });
     expect(saved).toBe("large");
   });
 });
@@ -229,7 +233,7 @@ test.describe("游戏结束", () => {
   });
 
   test("显示返回首页按钮", async ({ page }) => {
-    await expect(page.getByRole("button", { name: "返回首页" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "回到首页" })).toBeVisible();
   });
 
   test("显示命中率", async ({ page }) => {
@@ -279,14 +283,14 @@ test.describe("重新开始", () => {
 
 // ===== 返回首页 =====
 
-test.describe("返回首页", () => {
+test.describe("回到首页", () => {
   test("点击返回首页回到空闲界面", async ({ page }) => {
     await page.goto("/");
     await waitForCanvas(page);
     await startGameDirect(page);
     await setGameState(page, "finished");
 
-    await page.getByRole("button", { name: "返回首页" }).click();
+    await page.getByRole("button", { name: "回到首页" }).click();
     await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     const state = await getGameState(page);
     expect(state).toBe("idle");
@@ -314,7 +318,7 @@ test.describe("状态流转", () => {
     expect(await getGameState(page)).toBe("finished");
 
     // 返回 idle
-    await page.getByRole("button", { name: "返回首页" }).click();
+    await page.getByRole("button", { name: "回到首页" }).click();
     await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     expect(await getGameState(page)).toBe("idle");
   });

@@ -9,7 +9,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Play, Settings, Palette } from "lucide-react";
+import { Play, Settings, Palette, Volume2, VolumeX } from "lucide-react";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
 
 interface IdleScreenProps {
@@ -32,6 +32,8 @@ interface IdleScreenProps {
   onSaveTheme: () => void;
   tempTheme: "default" | "thunderstorm";
   setTempTheme: (v: "default" | "thunderstorm") => void;
+  muted: boolean;
+  onToggleMute: () => void;
 }
 
 export const IdleScreen = React.memo(function IdleScreen({
@@ -54,6 +56,8 @@ export const IdleScreen = React.memo(function IdleScreen({
   onSaveTheme,
   tempTheme,
   setTempTheme,
+  muted,
+  onToggleMute,
 }: IdleScreenProps) {
   const [sensitivityInput, setSensitivityInput] = useState(String(tempSensitivity));
   const [prevSensitivity, setPrevSensitivity] = useState(tempSensitivity);
@@ -90,10 +94,6 @@ export const IdleScreen = React.memo(function IdleScreen({
       {/* 开始 & 设置按钮 */}
       {!showSettings && !showThemePanel && (
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onOpenTheme}>
-            <Palette data-icon="inline-start" className="size-4" />
-            主题
-          </Button>
           <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onStart}>
             <Play data-icon="inline-start" className="size-4" />
             开始
@@ -101,6 +101,14 @@ export const IdleScreen = React.memo(function IdleScreen({
           <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onOpenSettings}>
             <Settings data-icon="inline-start" className="size-4" />
             设置
+          </Button>
+          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onOpenTheme}>
+            <Palette data-icon="inline-start" className="size-4" />
+            主题
+          </Button>
+          <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={onToggleMute}>
+            {muted ? <VolumeX data-icon="inline-start" className="size-4" /> : <Volume2 data-icon="inline-start" className="size-4" />}
+            {muted ? "取消静音" : "静音"}
           </Button>
         </div>
       )}

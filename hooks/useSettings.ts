@@ -1,44 +1,21 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { useSyncRef } from "@/hooks/useSyncRef";
-import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { generateGridPositions } from "@/lib/grid";
-
-const TARGET_COUNT = 3;
+import { useState, useCallback } from "react";
+import {
+  useSettingsStore,
+  TARGET_COUNT_CONST,
+} from "@/stores/gameStore";
 
 export function useSettings() {
-  const [sensitivity, setSensitivity] = useLocalStorage(
-    "shootbang-sensitivity",
-    1.0,
-    parseFloat,
-  );
-  const [gridSize, setGridSize] = useLocalStorage(
-    "shootbang-gridSize",
-    3,
-    (s) => parseInt(s, 10),
-  );
-  const [duration, setDuration] = useLocalStorage(
-    "shootbang-duration",
-    30,
-    (s) => parseInt(s, 10),
-  );
-  const [targetSize, setTargetSize] = useLocalStorage(
-    "shootbang-targetSize",
-    "default",
-    (s) => s,
-  );
-
-  const gridPositions = useMemo(
-    () => generateGridPositions(gridSize),
-    [gridSize],
-  );
-
-  const sensitivityRef = useSyncRef(sensitivity);
-  const gridPositionsRef = useSyncRef(gridPositions);
-  const targetCountRef = useSyncRef(TARGET_COUNT);
-  const durationRef = useSyncRef(duration);
-  const targetSizeRef = useSyncRef(targetSize);
+  const sensitivity = useSettingsStore((s) => s.sensitivity);
+  const gridSize = useSettingsStore((s) => s.gridSize);
+  const duration = useSettingsStore((s) => s.duration);
+  const targetSize = useSettingsStore((s) => s.targetSize);
+  const gridPositions = useSettingsStore((s) => s.gridPositions);
+  const setSensitivity = useSettingsStore((s) => s.setSensitivity);
+  const setGridSize = useSettingsStore((s) => s.setGridSize);
+  const setDuration = useSettingsStore((s) => s.setDuration);
+  const setTargetSize = useSettingsStore((s) => s.setTargetSize);
 
   // 临时设置状态（设置面板编辑中）
   const [showSettings, setShowSettings] = useState(false);
@@ -48,12 +25,13 @@ export function useSettings() {
   const [tempTargetSize, setTempTargetSize] = useState(targetSize);
 
   const openSettings = useCallback(() => {
-    setTempSensitivity(sensitivity);
-    setTempGridSize(gridSize);
-    setTempDuration(duration);
-    setTempTargetSize(targetSize);
+    const s = useSettingsStore.getState();
+    setTempSensitivity(s.sensitivity);
+    setTempGridSize(s.gridSize);
+    setTempDuration(s.duration);
+    setTempTargetSize(s.targetSize);
     setShowSettings(true);
-  }, [sensitivity, gridSize, duration, targetSize]);
+  }, []);
 
   const cancelSettings = useCallback(() => {
     setShowSettings(false);
@@ -79,15 +57,10 @@ export function useSettings() {
   return {
     sensitivity,
     gridSize,
-    targetCount: TARGET_COUNT,
+    targetCount: TARGET_COUNT_CONST,
     duration,
     targetSize,
-    sensitivityRef,
     gridPositions,
-    gridPositionsRef,
-    targetCountRef,
-    durationRef,
-    targetSizeRef,
     showSettings,
     tempSensitivity,
     tempGridSize,

@@ -3,7 +3,8 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { playThunder, createRain } from "@/lib/thunderAudio";
+import { playThunder, startRain, stopRain } from "@/lib/thunderAudio";
+import { useSettingsStore } from "@/stores/gameStore";
 
 // ---- Rain: InstancedMesh + PlaneGeometry streaks ----
 
@@ -319,11 +320,20 @@ function OvercastSky({ flashRef }: { flashRef: RefObject<number> }) {
 
 export function Thunderstorm() {
   const flashRef = useRef(0);
+  const muted = useSettingsStore((s) => s.muted);
 
   useEffect(() => {
-    const stopRain = createRain();
+    startRain();
     return stopRain;
   }, []);
+
+  useEffect(() => {
+    if (muted) {
+      stopRain();
+    } else {
+      startRain();
+    }
+  }, [muted]);
 
   return (
     <>

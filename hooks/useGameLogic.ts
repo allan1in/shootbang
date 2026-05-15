@@ -3,18 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as THREE from "three";
 import { toast } from "sonner";
-import { useSyncRef } from "@/hooks/useSyncRef";
+import {
+  useGameStore,
+  useSettingsStore,
+  type GameState,
+  type GameStats,
+} from "@/stores/gameStore";
+export type { GameStats } from "@/stores/gameStore";
 import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
 import { type TargetState, spawnTarget, hideAllTargets } from "@/lib/grid";
-
-type GameState = "idle" | "playing" | "finished";
-
-export interface GameStats {
-  hits: number;
-  totalShots: number;
-  accuracy: number;
-  avgReactionTime: number;
-}
 
 const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -27,31 +24,20 @@ interface UseGameLogicDeps {
   raycasterRef: React.MutableRefObject<THREE.Raycaster>;
   mouseAccum: React.MutableRefObject<{ x: number; y: number }>;
   containerRef: React.RefObject<HTMLCanvasElement | null>;
-  gridPositionsRef: React.MutableRefObject<[number, number][]>;
-  targetCountRef: React.MutableRefObject<number>;
-  durationRef: React.MutableRefObject<number>;
-  sensitivityRef: React.MutableRefObject<number>;
-  targetSizeRef: React.MutableRefObject<string>;
 }
 
 export function useGameLogic(deps: UseGameLogicDeps) {
-  const {
-    targetsRef,
-    cameraRef,
-    raycasterRef,
-    mouseAccum,
-    containerRef,
-    gridPositionsRef,
-    targetCountRef,
-    durationRef,
-    sensitivityRef,
-    targetSizeRef,
-  } = deps;
+  const { targetsRef, cameraRef, raycasterRef, mouseAccum, containerRef } = deps;
 
-  const [gameState, setGameState] = useState<GameState>("idle");
-  const [isLocked, setIsLocked] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
+  // 订阅 store 以触发 re-render
+  const gameState = useGameStore((s) => s.gameState);
+  const isPaused = useGameStore((s) => s.isPaused);
+  const isLocked = useGameStore((s) => s.isLocked);
+  const countdown = useGameStore((s) => s.countdown);
+  const gameStats = useGameStore((s) => s.gameStats);
+  const setIsLocked = useGameStore((s) => s.setIsLocked);
+  const setCountdown = useGameStore((s) => s.setCountdown);
+
   const [timeLeft, setTimeLeft] = useState(30);
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,19 +48,12 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const gameStartTimeRef = useRef(0);
   const lastHitTimeRef = useRef(0);
   const hitIntervalsRef = useRef<number[]>([]);
-  const [gameStats, setGameStats] = useState<GameStats>({
-    hits: 0, totalShots: 0, accuracy: 0, avgReactionTime: 0,
-  });
-  const gameStatsRef = useSyncRef(gameStats);
-
-  const gameStateRef = useSyncRef(gameState);
-  const isPausedRef = useSyncRef(isPaused);
 
   // 鼠标移动 + 指针锁定事件
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (document.pointerLockElement) {
-        const s = BASE_SENSITIVITY * sensitivityRef.current;
+        const s = BASE_SENSITIVITY * useSettingsStore.getState().sensitivity;
         mouseAccum.current.x -= e.movementX * s;
         mouseAccum.current.y = Math.max(
           -Math.PI / 2,
@@ -86,10 +65,10 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     const handlePointerLockChange = () => {
       const locked = !!document.pointerLockElement;
       setIsLocked(locked);
-      if (locked && gameStateRef.current === "playing") {
-        setIsPaused(false);
-      } else if (!locked && gameStateRef.current === "playing") {
-        setIsPaused(true);
+      if (locked && useGameStore.getState().gameState === "playing") {
+        useGameStore.getState().setIsPaused(false);
+      } else if (!locked && useGameStore.getState().gameState === "playing") {
+        useGameStore.getState().setIsPaused(true);
         if (countdownTimer.current) {
           clearTimeout(countdownTimer.current);
           setCountdown(null);
@@ -104,14 +83,15 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       window.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", handlePointerLockChange);
     };
-  }, []);
+  }, [setIsLocked, setCountdown, mouseAccum]);
 
   // 开始游戏
   const startGame = useCallback(() => {
-    setGameState("playing");
-    timeLeftRef.current = durationRef.current;
-    setTimeLeft(durationRef.current);
-    setIsPaused(false);
+    const s = useSettingsStore.getState();
+    useGameStore.getState().setGameState("playing");
+    timeLeftRef.current = s.duration;
+    setTimeLeft(s.duration);
+    useGameStore.getState().setIsPaused(false);
     hitsRef.current = 0;
     shotsRef.current = 0;
     lastHitTimeRef.current = 0;
@@ -120,20 +100,20 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     /* eslint-disable react-hooks/immutability */
     hideAllTargets(targetsRef.current);
     for (const t of targetsRef.current) t.gridIndex = -1;
-    const count = Math.min(targetCountRef.current, targetsRef.current.length);
-    const targetSize = TARGET_SIZE_MAP[targetSizeRef.current] ?? DEFAULT_TARGET_SIZE;
-    const s = targetSize / 0.4;
+    const count = Math.min(s.targetCount, targetsRef.current.length);
+    const targetSize = TARGET_SIZE_MAP[s.targetSize] ?? DEFAULT_TARGET_SIZE;
+    const scale = targetSize / 0.4;
     for (let i = 0; i < count; i++) {
-      targetsRef.current[i].mesh.scale.setScalar(s);
+      targetsRef.current[i].mesh.scale.setScalar(scale);
       spawnTarget(
         targetsRef.current[i],
         targetsRef.current,
-        gridPositionsRef.current,
-        targetCountRef.current,
+        s.gridPositions,
+        s.targetCount,
       );
     }
     /* eslint-enable react-hooks/immutability */
-  }, []);
+  }, [targetsRef]);
 
   // 倒计时
   const startCountdown = useCallback(() => {
@@ -152,7 +132,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       }, 1000);
     };
     tick(3);
-  }, []);
+  }, [setCountdown]);
 
   const requestLockAndResume = useCallback(
     (onLocked: () => void) => {
@@ -166,7 +146,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         })
         .catch(() => {});
     },
-    [startCountdown],
+    [startCountdown, containerRef],
   );
 
   const triggerStart = useCallback(() => {
@@ -174,7 +154,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   }, [requestLockAndResume, startGame]);
 
   const triggerResume = useCallback(() => {
-    requestLockAndResume(() => setIsPaused(false));
+    requestLockAndResume(() => useGameStore.getState().setIsPaused(false));
   }, [requestLockAndResume]);
 
   // 测试辅助：暴露游戏控制函数到 window（仅注册一次）
@@ -192,10 +172,10 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     w.__shootbang_test = {
       startGame: () => startGameRef.current(),
       startCountdown: () => startCountdownRef.current(),
-      setGameState: (s: GameState) => setGameState(s),
-      getGameState: () => gameStateRef.current,
+      setGameState: (s: GameState) => useGameStore.getState().setGameState(s),
+      getGameState: () => useGameStore.getState().gameState,
       getTargetsInfo: () => {
-        const active = targetsRef.current.slice(0, targetCountRef.current);
+        const active = targetsRef.current.slice(0, useSettingsStore.getState().targetCount);
         return active.map((t) => ({
           visible: t.mesh.visible,
           x: t.mesh.position.x,
@@ -204,14 +184,17 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         }));
       },
       getTimeLeft: () => timeLeftRef.current,
-      getDuration: () => durationRef.current,
-      getGameStats: () => gameStatsRef.current,
-      setGameStats: (stats: Partial<GameStats>) => setGameStats((prev) => ({ ...prev, ...stats })),
+      getDuration: () => useSettingsStore.getState().duration,
+      getGameStats: () => useGameStore.getState().gameStats,
+      setGameStats: (stats: Partial<GameStats>) => {
+        const prev = useGameStore.getState().gameStats;
+        useGameStore.getState().setGameStats({ ...prev, ...stats });
+      },
     };
     return () => {
       delete w.__shootbang_test;
     };
-  }, []);
+  }, [targetsRef]);
 
   // 组件卸载时清除倒计时
   useEffect(() => {
@@ -222,14 +205,15 @@ export function useGameLogic(deps: UseGameLogicDeps) {
 
   // 点击处理
   const handleClick = useCallback(() => {
-    if (gameStateRef.current !== "playing") return;
+    if (useGameStore.getState().gameState !== "playing") return;
     if (countdownTimer.current !== null) return;
     if (!cameraRef.current) return;
 
+    const s = useSettingsStore.getState();
     shotsRef.current++;
     raycasterRef.current.setFromCamera(CENTER_SCREEN, cameraRef.current);
 
-    const active = targetsRef.current.slice(0, targetCountRef.current);
+    const active = targetsRef.current.slice(0, s.targetCount);
     const activeMeshes = active
       .filter((t) => t.mesh.visible)
       .map((t) => t.mesh);
@@ -253,14 +237,14 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         spawnTarget(
           hitTarget,
           targetsRef.current,
-          gridPositionsRef.current,
-          targetCountRef.current,
+          s.gridPositions,
+          s.targetCount,
         );
       }
     } else {
       playMissSound();
     }
-  }, []);
+  }, [targetsRef, cameraRef, raycasterRef]);
 
   useEffect(() => {
     handleClickRef.current = handleClick;
@@ -269,12 +253,12 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   // 鼠标点击事件
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (gameStateRef.current !== "playing") return;
+      if (useGameStore.getState().gameState !== "playing") return;
       if (e.button !== 0) return;
 
       if (!document.pointerLockElement) {
-        if (!isPausedRef.current) setIsPaused(true);
-      } else if (!isPausedRef.current) {
+        if (!useGameStore.getState().isPaused) useGameStore.getState().setIsPaused(true);
+      } else if (!useGameStore.getState().isPaused) {
         handleClickRef.current();
       }
     };
@@ -289,33 +273,31 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     gameStartTimeRef.current = Date.now();
     let tick = 0;
     const timer = setInterval(() => {
-      timeLeftRef.current = Math.round((timeLeftRef.current - 0.01) * 100) / 100;
+      const elapsed = (Date.now() - gameStartTimeRef.current) / 1000;
+      timeLeftRef.current = Math.max(0, useSettingsStore.getState().duration - elapsed);
       if (++tick % 10 === 0) setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
         setTimeLeft(0);
-        gameStateRef.current = "finished";
-        setGameState("finished");
+        useGameStore.getState().setGameState("finished");
         const totalShots = shotsRef.current;
         const hits = hitsRef.current;
         const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
         const avgReactionTime = hitIntervalsRef.current.length > 0
           ? Math.round(hitIntervalsRef.current.reduce((a, b) => a + b, 0) / hitIntervalsRef.current.length)
           : 0;
-        setGameStats({ hits, totalShots, accuracy, avgReactionTime });
+        useGameStore.getState().setGameStats({ hits, totalShots, accuracy, avgReactionTime });
         hideAllTargets(targetsRef.current);
         document.exitPointerLock();
-        setIsLocked(false);
+        useGameStore.getState().setIsLocked(false);
         clearInterval(timer);
       }
     }, 10);
 
     return () => clearInterval(timer);
-  }, [gameState, isPaused, countdown]);
+  }, [gameState, isPaused, countdown, targetsRef]);
 
   return {
     gameState,
-    gameStateRef,
-    setGameState,
     isLocked,
     isPaused,
     countdown,

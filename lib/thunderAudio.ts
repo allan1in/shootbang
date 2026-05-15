@@ -1,6 +1,22 @@
-import { getCtx } from "@/lib/sounds";
+import { getCtx, getMasterGainNode } from "@/lib/sounds";
+import { useSettingsStore } from "@/stores/gameStore";
 
 let noiseBuffer: AudioBuffer | null = null;
+
+let currentRainCleanup: (() => void) | null = null;
+
+export function stopRain() {
+  if (currentRainCleanup) {
+    currentRainCleanup();
+    currentRainCleanup = null;
+  }
+}
+
+export function startRain() {
+  stopRain();
+  if (useSettingsStore.getState().muted) return;
+  currentRainCleanup = createRain();
+}
 
 function getNoiseBuffer(): AudioBuffer | null {
   if (noiseBuffer) return noiseBuffer;
@@ -17,6 +33,7 @@ function getNoiseBuffer(): AudioBuffer | null {
 }
 
 export function createRain(): () => void {
+  if (useSettingsStore.getState().muted) return () => {};
   let stopped = false;
   let cleanup: (() => void) | null = null;
 
@@ -27,7 +44,7 @@ export function createRain(): () => void {
 
     const masterGain = ctx.createGain();
     masterGain.gain.value = 0;
-    masterGain.connect(ctx.destination);
+    masterGain.connect(getMasterGainNode() ?? ctx.destination);
 
     const buffer = getNoiseBuffer();
     if (!buffer) return;
@@ -132,6 +149,7 @@ export function createRain(): () => void {
 }
 
 export function playThunder(delaySeconds: number) {
+  if (useSettingsStore.getState().muted) return;
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -148,7 +166,7 @@ export function playThunder(delaySeconds: number) {
   compressor.ratio.value = 12;
   compressor.attack.value = 0.001;
   compressor.release.value = 0.2;
-  compressor.connect(ctx.destination);
+  compressor.connect(getMasterGainNode() ?? ctx.destination);
 
   const master = ctx.createGain();
   master.gain.value = 1.2;

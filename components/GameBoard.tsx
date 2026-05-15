@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { RootState } from "@react-three/fiber";
-import { RotateCcw, Home } from "lucide-react";
+import { RotateCcw, Home, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
@@ -14,14 +14,22 @@ import { ResultStats } from "@/components/ResultStats";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
+import { useGameStore, useSettingsStore } from "@/stores/gameStore";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
+import { setMasterMuted } from "@/lib/sounds";
 
 export default function GameBoard() {
   const settings = useSettings();
   const bridge = useR3FBridge();
   const { theme, setTheme } = useTheme();
+  const muted = useSettingsStore((s) => s.muted);
+  const toggleMute = useSettingsStore((s) => s.toggleMute);
+
+  useEffect(() => {
+    setMasterMuted(muted);
+  }, [muted]);
 
   // 主题面板状态
   const [showThemePanel, setShowThemePanel] = useState(false);
@@ -47,18 +55,13 @@ export default function GameBoard() {
     raycasterRef: bridge.raycasterRef,
     mouseAccum: bridge.mouseAccum,
     containerRef: bridge.canvasRef,
-    gridPositionsRef: settings.gridPositionsRef,
-    targetCountRef: settings.targetCountRef,
-    durationRef: settings.durationRef,
-    sensitivityRef: settings.sensitivityRef,
-    targetSizeRef: settings.targetSizeRef,
   });
 
   // 稳定回调
   const handlePauseHome = useCallback(() => {
     document.exitPointerLock();
-    game.setGameState("idle");
-  }, [game.setGameState]);
+    useGameStore.getState().setGameState("idle");
+  }, []);
 
   const handlePauseRestart = useCallback(() => {
     document.exitPointerLock();
@@ -66,8 +69,8 @@ export default function GameBoard() {
   }, [game.triggerStart]);
 
   const handleFinishedHome = useCallback(() => {
-    game.setGameState("idle");
-  }, [game.setGameState]);
+    useGameStore.getState().setGameState("idle");
+  }, []);
 
   const handleCreated = useCallback(
     (state: RootState) => {
@@ -102,6 +105,8 @@ export default function GameBoard() {
           onHome={handlePauseHome}
           onRestart={handlePauseRestart}
           onResume={game.triggerResume}
+          muted={muted}
+          onToggleMute={toggleMute}
         />
       )}
 
@@ -127,6 +132,8 @@ export default function GameBoard() {
           onSaveTheme={saveTheme}
           tempTheme={tempTheme}
           setTempTheme={setTempTheme}
+          muted={muted}
+          onToggleMute={toggleMute}
         />
       )}
 
@@ -142,7 +149,11 @@ export default function GameBoard() {
               </Button>
               <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={handleFinishedHome}>
                 <Home data-icon="inline-start" className="size-4" />
-                返回首页
+                回到首页
+              </Button>
+              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={toggleMute}>
+                {muted ? <VolumeX data-icon="inline-start" className="size-4" /> : <Volume2 data-icon="inline-start" className="size-4" />}
+                {muted ? "取消静音" : "静音"}
               </Button>
             </div>
           </div>
