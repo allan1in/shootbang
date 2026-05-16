@@ -44,7 +44,7 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
         <CameraController />
         <SceneLights />
         <RoomWalls theme={theme} />
-        <TargetPool gameState={gameState ?? "idle"} />
+        <TargetPool gameState={gameState ?? "idle"} theme={theme} />
         {theme === "thunderstorm" && <Thunderstorm />}
         {theme === "blizzard" && <Blizzard />}
         {children}

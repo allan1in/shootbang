@@ -119,7 +119,7 @@ export const IdleScreen = React.memo(function IdleScreen({
 
       {/* 主题面板 */}
       {showThemePanel && (
-        <Card className="w-auto min-w-64">
+        <Card className="w-auto min-w-64 backdrop-blur-xl bg-card/60">
           <CardHeader>
             <CardTitle>主题</CardTitle>
           </CardHeader>
@@ -165,7 +165,7 @@ export const IdleScreen = React.memo(function IdleScreen({
 
       {/* 设置面板 */}
       {showSettings && (
-        <Card className="w-auto min-w-64">
+        <Card className="w-auto min-w-64 backdrop-blur-xl bg-card/60">
           <CardHeader>
             <CardTitle>设置</CardTitle>
           </CardHeader>

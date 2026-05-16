@@ -143,11 +143,16 @@ export function RoomWalls({ theme }: { theme?: string }) {
 
 // ---- TargetPool: 10 sphere meshes (R3F-managed via JSX, ref callback) ----
 
-const SPHERE_COLOR = 0x9ca3af;
+const SPHERE_COLORS: Record<string, number> = {
+  default: 0x38bdf8,
+  thunderstorm: 0x9ca3af,
+  blizzard: 0x7dd3fc,
+};
 const MAX_TARGETS = 10;
 
-export function TargetPool({ gameState }: { gameState: string }) {
+export function TargetPool({ gameState, theme }: { gameState: string; theme?: string }) {
   const { targetsRef } = useR3FScene();
+  const sphereColor = SPHERE_COLORS[theme ?? "default"] ?? SPHERE_COLORS.default;
 
   // When game is not playing, ensure targets are hidden
   // (handles mesh recreation after R3F re-render)
@@ -160,7 +165,7 @@ export function TargetPool({ gameState }: { gameState: string }) {
   return (
     <group>
       {Array.from({ length: MAX_TARGETS }, (_, i) => (
-        <TargetSphere key={i} index={i} targetsRef={targetsRef} />
+        <TargetSphere key={i} index={i} targetsRef={targetsRef} color={sphereColor} transparent={theme === "blizzard"} />
       ))}
     </group>
   );
@@ -169,9 +174,13 @@ export function TargetPool({ gameState }: { gameState: string }) {
 function TargetSphere({
   index,
   targetsRef,
+  color,
+  transparent,
 }: {
   index: number;
   targetsRef: React.MutableRefObject<TargetState[]>;
+  color: number;
+  transparent?: boolean;
 }) {
   return (
     <mesh
@@ -193,11 +202,13 @@ function TargetSphere({
     >
       <sphereGeometry args={[0.4, 32, 32]} />
       <meshStandardMaterial
-        color={SPHERE_COLOR}
-        emissive={SPHERE_COLOR}
+        color={color}
+        emissive={color}
         emissiveIntensity={0.3}
         roughness={0.2}
         metalness={0.3}
+        transparent={transparent}
+        opacity={transparent ? 0.7 : 1}
       />
     </mesh>
   );
