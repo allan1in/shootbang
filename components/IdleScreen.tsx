@@ -126,7 +126,7 @@ export const IdleScreen = React.memo(function IdleScreen({
           <CardContent className="space-y-2">
             {([
               { key: "default" as const, name: "默认", desc: "经典网格" },
-              { key: "thunderstorm" as const, name: "雷暴", desc: "小心闪电" },
+              { key: "thunderstorm" as const, name: "雷雨", desc: "小心闪电" },
               { key: "blizzard" as const, name: "暴雪", desc: "寒风呼啸" },
             ]).map((t) => (
               <button

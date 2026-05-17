@@ -165,6 +165,14 @@ export default function GameBoard() {
         <CountdownOverlay countdown={game.countdown} />
       )}
 
+      {/* 暴雪白化遮罩 */}
+      {theme === "blizzard" && (
+        <div
+          className="absolute inset-0 z-10 pointer-events-none"
+          style={{ backgroundColor: "rgba(255,255,255,0.15)", opacity: "var(--whiteout, 0)" }}
+        />
+      )}
+
       {/* 3D 场景 */}
       <SceneCanvas
         className={`w-full h-full ${game.isLocked ? "cursor-none" : "cursor-default"}`}

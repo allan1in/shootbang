@@ -3,19 +3,32 @@ import { useSettingsStore } from "@/stores/gameStore";
 
 let noiseBuffer: AudioBuffer | null = null;
 
-let currentWindCleanup: (() => void) | null = null;
+interface WindHandle {
+  cleanup: (immediate?: boolean) => void;
+  setWhiteout: (t: number) => void;
+  setMuted: (muted: boolean) => void;
+}
 
-export function stopWind() {
-  if (currentWindCleanup) {
-    currentWindCleanup();
-    currentWindCleanup = null;
+let currentWind: WindHandle | null = null;
+
+export function stopWind(immediate = false) {
+  if (currentWind) {
+    currentWind.cleanup(immediate);
+    currentWind = null;
   }
 }
 
-export function startWind() {
-  stopWind();
-  if (useSettingsStore.getState().muted) return;
-  currentWindCleanup = createWind();
+export function setWindWhiteout(t: number) {
+  currentWind?.setWhiteout(t);
+}
+
+export function muteWind(muted: boolean) {
+  currentWind?.setMuted(muted);
+}
+
+export function startWind(onGust?: (duration: number) => void) {
+  stopWind(true);
+  currentWind = createWind(onGust);
 }
 
 function getNoiseBuffer(): AudioBuffer | null {
@@ -32,10 +45,13 @@ function getNoiseBuffer(): AudioBuffer | null {
   return buffer;
 }
 
-export function createWind(): () => void {
-  if (useSettingsStore.getState().muted) return () => {};
+export function createWind(onGust?: (duration: number) => void): WindHandle {
+  if (useSettingsStore.getState().muted) return { cleanup: () => {}, setWhiteout: () => {}, setMuted: () => {} };
   let stopped = false;
-  let cleanup: (() => void) | null = null;
+  let isMuted = false;
+  let cleanup: ((immediate?: boolean) => void) | null = null;
+  let whiteoutFn: (t: number) => void = () => {};
+  let setMutedFn: (muted: boolean) => void = () => {};
 
   function start(ctx: AudioContext) {
     if (stopped) return;
@@ -124,20 +140,41 @@ export function createWind(): () => void {
     lfo3Gain.connect(whistleBP.frequency);
     lfo3.start();
 
-    // Fade in over 2 seconds
-    masterGain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 2.0);
+    masterGain.gain.value = 0.3;
+
+    // Whiteout intensity control: boost volume + shift howl frequency
+    whiteoutFn = (t: number) => {
+      if (stopped || isMuted) return;
+      const now = ctx.currentTime;
+      masterGain.gain.setTargetAtTime(0.3 + t * 0.25, now, 0.3);
+      howlBP.frequency.setTargetAtTime(400 + t * 200, now, 0.3);
+      howlGain.gain.setTargetAtTime(0.15 + t * 0.1, now, 0.3);
+    };
+
+    // Mute control: fade volume without destroying the audio graph
+    setMutedFn = (muted: boolean) => {
+      if (stopped) return;
+      isMuted = muted;
+      const now = ctx.currentTime;
+      if (muted) {
+        masterGain.gain.setTargetAtTime(0, now, 0.5);
+      } else {
+        masterGain.gain.setTargetAtTime(0.3, now, 0.8);
+      }
+    };
 
     // Periodic strong gusts — louder, faster sweep
     let gustTimer: ReturnType<typeof setTimeout>;
 
     function scheduleGust() {
       if (stopped) return;
-      const delay = 4 + Math.random() * 6;
+      const delay = 3 + Math.random() * 5;
       gustTimer = setTimeout(() => {
         if (stopped) return;
 
         const t = ctx.currentTime;
         const dur = 1.0 + Math.random() * 1.5;
+        onGust?.(dur);
 
         const gustSrc = ctx.createBufferSource();
         gustSrc.buffer = buffer;
@@ -165,33 +202,41 @@ export function createWind(): () => void {
 
     scheduleGust();
 
-    cleanup = () => {
+    const disconnectAll = () => {
+      bedSrc.stop();
+      bedSrc.disconnect();
+      bedLP.disconnect();
+      bedGain.disconnect();
+      howlSrc.stop();
+      howlSrc.disconnect();
+      howlBP.disconnect();
+      howlGain.disconnect();
+      whistleSrc.stop();
+      whistleSrc.disconnect();
+      whistleBP.disconnect();
+      whistleGain.disconnect();
+      lfo1.stop();
+      lfo1.disconnect();
+      lfo1Gain.disconnect();
+      lfo2.stop();
+      lfo2.disconnect();
+      lfo2Gain.disconnect();
+      lfo3.stop();
+      lfo3.disconnect();
+      lfo3Gain.disconnect();
+      masterGain.disconnect();
+    };
+
+    cleanup = (immediate?: boolean) => {
       clearTimeout(gustTimer);
-      masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.0);
-      setTimeout(() => {
-        bedSrc.stop();
-        bedSrc.disconnect();
-        bedLP.disconnect();
-        bedGain.disconnect();
-        howlSrc.stop();
-        howlSrc.disconnect();
-        howlBP.disconnect();
-        howlGain.disconnect();
-        whistleSrc.stop();
-        whistleSrc.disconnect();
-        whistleBP.disconnect();
-        whistleGain.disconnect();
-        lfo1.stop();
-        lfo1.disconnect();
-        lfo1Gain.disconnect();
-        lfo2.stop();
-        lfo2.disconnect();
-        lfo2Gain.disconnect();
-        lfo3.stop();
-        lfo3.disconnect();
-        lfo3Gain.disconnect();
-        masterGain.disconnect();
-      }, 1500);
+      if (immediate) {
+        masterGain.gain.cancelScheduledValues(ctx.currentTime);
+        masterGain.gain.value = 0;
+        disconnectAll();
+      } else {
+        masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.0);
+        setTimeout(disconnectAll, 1500);
+      }
     };
   }
 
@@ -214,8 +259,12 @@ export function createWind(): () => void {
     };
   }
 
-  return () => {
-    stopped = true;
-    cleanup?.();
+  return {
+    cleanup: (immediate?: boolean) => {
+      stopped = true;
+      cleanup?.(immediate);
+    },
+    setWhiteout: (t: number) => whiteoutFn(t),
+    setMuted: (muted: boolean) => setMutedFn(muted),
   };
 }

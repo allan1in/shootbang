@@ -144,9 +144,9 @@ export function RoomWalls({ theme }: { theme?: string }) {
 // ---- TargetPool: 10 sphere meshes (R3F-managed via JSX, ref callback) ----
 
 const SPHERE_COLORS: Record<string, number> = {
-  default: 0x38bdf8,
-  thunderstorm: 0x9ca3af,
-  blizzard: 0x7dd3fc,
+  default: 0xc8cdd2,
+  thunderstorm: 0xc8cdd2,
+  blizzard: 0xc8cdd2,
 };
 const MAX_TARGETS = 10;
 
