@@ -2,15 +2,13 @@
 
 import { useState, useCallback, useEffect } from "react";
 import type { RootState } from "@react-three/fiber";
-import { RotateCcw, Home, Volume2, VolumeX } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
 import { IdleScreen } from "@/components/IdleScreen";
 import { CountdownOverlay } from "@/components/CountdownOverlay";
+import { FinishedOverlay } from "@/components/FinishedOverlay";
 import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
-import { ResultStats } from "@/components/ResultStats";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -139,25 +137,13 @@ export default function GameBoard() {
 
       {/* 结束页面 */}
       {game.gameState === "finished" && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 cursor-default">
-          <div className="flex flex-col items-center">
-            <ResultStats stats={game.gameStats} />
-            <div className="flex items-center gap-3">
-              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={game.triggerStart}>
-                <RotateCcw data-icon="inline-start" className="size-4" />
-                重新开始
-              </Button>
-              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={handleFinishedHome}>
-                <Home data-icon="inline-start" className="size-4" />
-                回到首页
-              </Button>
-              <Button variant="outline" className="cursor-pointer border-foreground/10" onClick={toggleMute}>
-                {muted ? <VolumeX data-icon="inline-start" className="size-4" /> : <Volume2 data-icon="inline-start" className="size-4" />}
-                {muted ? "取消静音" : "静音"}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <FinishedOverlay
+          stats={game.gameStats}
+          onRestart={game.triggerStart}
+          onHome={handleFinishedHome}
+          muted={muted}
+          onToggleMute={toggleMute}
+        />
       )}
 
       {/* 倒计时 */}
