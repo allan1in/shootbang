@@ -342,3 +342,38 @@ test.describe("移动端提示", () => {
     await expect(page.locator("canvas")).not.toBeVisible();
   });
 });
+
+// ===== 懒加载 =====
+
+test.describe("懒加载", () => {
+  test.describe("移动端", () => {
+    test.use({ viewport: { width: 375, height: 667 } });
+
+    test("不加载游戏模块", async ({ page }) => {
+      await page.goto("/");
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+      // __shootbang_test 由 GameBoard 依赖链注册，未定义即游戏 chunk 未加载执行
+      const apiDefined = await page.evaluate(
+        () => "__shootbang_test" in window
+      );
+      expect(apiDefined).toBe(false);
+    });
+
+    test("边界：窗口从移动尺寸变为桌面尺寸后按需加载游戏", async ({ page }) => {
+      await page.goto("/");
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await expect(page.locator("canvas")).toBeVisible({ timeout: 10000 });
+    });
+  });
+
+  test("桌面端加载游戏模块", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    const apiDefined = await page.evaluate(
+      () => "__shootbang_test" in window
+    );
+    expect(apiDefined).toBe(true);
+  });
+});
