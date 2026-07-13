@@ -22,6 +22,10 @@ interface ShootbangTestAPI {
   getTargetsInfo: () => TargetInfo[];
   getTimeLeft: () => number;
   getDuration: () => number;
+  setPaused: (paused: boolean) => void;
+  recordHitTiming: () => void;
+  getHitIntervals: () => number[];
+  getAverageReactionTime: () => number;
   getGameStats: () => GameStats;
   setGameStats: (stats: Partial<GameStats>) => void;
 }
@@ -178,6 +182,133 @@ test.describe("计时进度条", () => {
 
     const progress = page.locator('[data-slot="progress"]');
     await expect(progress).not.toBeVisible();
+  });
+});
+
+// ===== 暂停计时 =====
+
+test.describe("暂停计时", () => {
+  test("恢复后从暂停时的剩余时间继续", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(500);
+
+    const pausedAt = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(true);
+      return api.getTimeLeft();
+    });
+
+    await page.waitForTimeout(500);
+    const whilePaused = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTimeLeft();
+    });
+    expect(Math.abs(whilePaused - pausedAt)).toBeLessThan(0.1);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(false);
+    });
+    await page.waitForTimeout(500);
+
+    const afterResume = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTimeLeft();
+    });
+    expect(afterResume).toBeLessThan(pausedAt - 0.3);
+  });
+});
+
+// ===== 平均反应时间 =====
+
+test.describe("平均反应时间", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+  });
+
+  test("首次和连续命中使用有效训练时间", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+    });
+    await page.waitForTimeout(400);
+
+    const timing = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      return {
+        intervals: api.getHitIntervals(),
+        average: api.getAverageReactionTime(),
+      };
+    });
+
+    expect(timing.intervals).toHaveLength(2);
+    expect(timing.intervals[0]).toBeGreaterThan(250);
+    expect(timing.intervals[0]).toBeLessThan(800);
+    expect(timing.intervals[1]).toBeGreaterThan(250);
+    expect(timing.intervals[1]).toBeLessThan(800);
+    expect(timing.average).toBeGreaterThan(250);
+    expect(timing.average).toBeLessThan(800);
+  });
+
+  test("暂停和恢复倒计时不计入命中间隔", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      api.setPaused(true);
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(false);
+      api.startCountdown();
+    });
+    await page.waitForTimeout(3200);
+    await page.waitForTimeout(300);
+
+    const secondInterval = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      return api.getHitIntervals()[1];
+    });
+    expect(secondInterval).toBeGreaterThan(50);
+    expect(secondInterval).toBeLessThan(700);
+  });
+
+  test("重新开始会清空上一局的命中计时", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+      api.recordHitTiming();
+      api.startGame();
+    });
+
+    const resetTiming = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        intervals: api.getHitIntervals(),
+        average: api.getAverageReactionTime(),
+      };
+    });
+    expect(resetTiming.intervals).toEqual([]);
+    expect(resetTiming.average).toBe(0);
   });
 });
 
