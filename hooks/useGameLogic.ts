@@ -17,6 +17,7 @@ const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
 const DEFAULT_TARGET_SIZE = 0.405;
+type PointerInputMode = "none" | "raw" | "standard";
 
 interface UseGameLogicDeps {
   targetsRef: React.MutableRefObject<TargetState[]>;
@@ -42,6 +43,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
+  const pointerInputModeRef = useRef<PointerInputMode>("none");
 
   const hitsRef = useRef(0);
   const shotsRef = useRef(0);
@@ -82,11 +84,14 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       if (locked && useGameStore.getState().gameState === "playing") {
         useGameStore.getState().setIsPaused(false);
       } else if (!locked && useGameStore.getState().gameState === "playing") {
+        pointerInputModeRef.current = "none";
         useGameStore.getState().setIsPaused(true);
         if (countdownTimer.current) {
           clearTimeout(countdownTimer.current);
           setCountdown(null);
         }
+      } else if (!locked) {
+        pointerInputModeRef.current = "none";
       }
     };
 
@@ -150,15 +155,27 @@ export function useGameLogic(deps: UseGameLogicDeps) {
 
   const requestLockAndResume = useCallback(
     (onLocked: () => void) => {
-      containerRef.current
-        ?.requestPointerLock()
-        .then(() => {
-          onLocked();
-          startCountdown();
-          toast.dismiss();
-          toast.info("按 Esc 退出瞄准模式");
-        })
-        .catch(() => {});
+      const container = containerRef.current;
+      if (!container) return;
+
+      pointerInputModeRef.current = "none";
+      const completeLock = (inputMode: Exclude<PointerInputMode, "none">) => {
+        pointerInputModeRef.current = inputMode;
+        onLocked();
+        startCountdown();
+        toast.dismiss();
+        toast.info("按 Esc 退出瞄准模式");
+      };
+
+      container
+        .requestPointerLock({ unadjustedMovement: true })
+        .then(() => completeLock("raw"))
+        .catch(() => {
+          container
+            .requestPointerLock()
+            .then(() => completeLock("standard"))
+            .catch(() => {});
+        });
     },
     [startCountdown, containerRef],
   );
@@ -199,6 +216,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       },
       getTimeLeft: () => timeLeftRef.current,
       getDuration: () => useSettingsStore.getState().duration,
+      getPointerInputMode: () => pointerInputModeRef.current,
       setPaused: (paused: boolean) => useGameStore.getState().setIsPaused(paused),
       recordHitTiming: () => recordHitTiming(),
       getHitIntervals: () => [...hitIntervalsRef.current],

@@ -22,6 +22,7 @@ interface ShootbangTestAPI {
   getTargetsInfo: () => TargetInfo[];
   getTimeLeft: () => number;
   getDuration: () => number;
+  getPointerInputMode: () => "none" | "raw" | "standard";
   setPaused: (paused: boolean) => void;
   recordHitTiming: () => void;
   getHitIntervals: () => number[];
@@ -67,6 +68,33 @@ async function waitForCanvas(page: Page) {
   await page.waitForTimeout(500);
 }
 
+type PointerLockMockMode = "raw" | "fallback" | "fail";
+
+async function mockPointerLock(page: Page, mode: PointerLockMockMode) {
+  await page.addInitScript((mockMode) => {
+    const state = window as typeof window & {
+      __shootbangPointerLockRequests?: ({ unadjustedMovement?: boolean } | null)[];
+    };
+    state.__shootbangPointerLockRequests = [];
+    Element.prototype.requestPointerLock = function (options?: { unadjustedMovement?: boolean }) {
+      state.__shootbangPointerLockRequests!.push(options ?? null);
+      if (mockMode === "raw" || (mockMode === "fallback" && !options?.unadjustedMovement)) {
+        return Promise.resolve();
+      }
+      return Promise.reject(new DOMException("Pointer lock unavailable", "NotSupportedError"));
+    };
+  }, mode);
+}
+
+async function getPointerLockRequests(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbangPointerLockRequests?: ({ unadjustedMovement?: boolean } | null)[];
+    };
+    return state.__shootbangPointerLockRequests;
+  });
+}
+
 // ===== 空闲界面 =====
 
 test.describe("空闲界面", () => {
@@ -91,6 +119,84 @@ test.describe("空闲界面", () => {
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
+  });
+});
+
+// ===== 原始鼠标输入 =====
+
+test.describe("Pointer Lock 原始鼠标输入", () => {
+  test("优先请求原始鼠标输入", async ({ page }) => {
+    await mockPointerLock(page, "raw");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("raw");
+    expect(await getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }]);
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true })).toBeVisible();
+  });
+
+  test("原始输入不可用时静默降级并在每次恢复时重试", async ({ page }) => {
+    await mockPointerLock(page, "fallback");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("standard");
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true }).last()).toBeVisible();
+    expect(await getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }, null]);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(true);
+    });
+    await page.getByRole("button", { name: "继续" }).click();
+
+    await expect.poll(() => getPointerLockRequests(page)).toEqual([
+      { unadjustedMovement: true },
+      null,
+      { unadjustedMovement: true },
+      null,
+    ]);
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true }).last()).toBeVisible();
+  });
+
+  test("两次锁定失败时不启动游戏或显示提示", async ({ page }) => {
+    await mockPointerLock(page, "fail");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }, null]);
+    expect(await getGameState(page)).toBe("idle");
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true })).not.toBeVisible();
+  });
+
+  test("退出指针锁定时清除输入模式", async ({ page }) => {
+    await mockPointerLock(page, "raw");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("raw");
+
+    await page.evaluate(() => document.dispatchEvent(new Event("pointerlockchange")));
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("none");
   });
 });
 
