@@ -1,5 +1,4 @@
 import { getCtx, getMasterGainNode } from "@/lib/sounds";
-import { useSettingsStore } from "@/stores/gameStore";
 
 let noiseBuffer: AudioBuffer | null = null;
 
@@ -46,7 +45,6 @@ function getNoiseBuffer(): AudioBuffer | null {
 }
 
 export function createWind(onGust?: (duration: number) => void): WindHandle {
-  if (useSettingsStore.getState().muted) return { cleanup: () => {}, setWhiteout: () => {}, setMuted: () => {} };
   let stopped = false;
   let isMuted = false;
   let cleanup: ((immediate?: boolean) => void) | null = null;

@@ -237,7 +237,9 @@ function WhiteoutGust({ whiteoutRef }: { whiteoutRef: RefObject<number> }) {
   const { scene } = useThree();
   const ambientRef = useRef<THREE.AmbientLight>(null);
   const pendingGustRef = useRef(false);
-  const muted = useSettingsStore((s) => s.muted);
+  const muted = useSettingsStore(
+    (s) => (s.volumePreview ?? s.volume) === 0,
+  );
 
   // Wind audio lifecycle
   useEffect(() => {

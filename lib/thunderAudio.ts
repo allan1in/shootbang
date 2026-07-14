@@ -1,5 +1,4 @@
-import { getCtx, getMasterGainNode } from "@/lib/sounds";
-import { useSettingsStore } from "@/stores/gameStore";
+import { getCtx, getEffectiveVolume, getMasterGainNode } from "@/lib/sounds";
 
 let noiseBuffer: AudioBuffer | null = null;
 
@@ -14,7 +13,7 @@ export function stopRain() {
 
 export function startRain() {
   stopRain();
-  if (useSettingsStore.getState().muted) return;
+  if (getEffectiveVolume() === 0) return;
   currentRainCleanup = createRain();
 }
 
@@ -33,7 +32,7 @@ function getNoiseBuffer(): AudioBuffer | null {
 }
 
 export function createRain(): () => void {
-  if (useSettingsStore.getState().muted) return () => {};
+  if (getEffectiveVolume() === 0) return () => {};
   let stopped = false;
   let cleanup: (() => void) | null = null;
 
@@ -149,7 +148,7 @@ export function createRain(): () => void {
 }
 
 export function playThunder(delaySeconds: number) {
-  if (useSettingsStore.getState().muted) return;
+  if (getEffectiveVolume() === 0) return;
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume().catch(() => {});

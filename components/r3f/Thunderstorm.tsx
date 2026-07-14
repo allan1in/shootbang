@@ -320,7 +320,9 @@ function OvercastSky({ flashRef }: { flashRef: RefObject<number> }) {
 
 export function Thunderstorm() {
   const flashRef = useRef(0);
-  const muted = useSettingsStore((s) => s.muted);
+  const muted = useSettingsStore(
+    (s) => (s.volumePreview ?? s.volume) === 0,
+  );
 
   useEffect(() => {
     startRain();

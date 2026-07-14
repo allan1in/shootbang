@@ -13,13 +13,16 @@ interface SettingsState {
   targetSize: string;
   targetCount: number;
   gridPositions: [number, number][];
+  volume: number;
+  volumePreview: number | null;
   muted: boolean;
   setSensitivity: (v: number) => void;
   setGridSize: (v: number) => void;
   setDuration: (v: number) => void;
   setTargetSize: (v: string) => void;
-  toggleMute: () => void;
-  setMuted: (muted: boolean) => void;
+  setVolume: (volume: number) => void;
+  setVolumePreview: (volume: number) => void;
+  clearVolumePreview: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -31,15 +34,40 @@ export const useSettingsStore = create<SettingsState>()(
       targetSize: "default",
       targetCount: TARGET_COUNT,
       gridPositions: generateGridPositions(3),
+      volume: 100,
+      volumePreview: null,
       muted: false,
       setSensitivity: (v) => set({ sensitivity: v }),
       setGridSize: (v) => set({ gridSize: v, gridPositions: generateGridPositions(v) }),
       setDuration: (v) => set({ duration: v }),
       setTargetSize: (v) => set({ targetSize: v }),
-      toggleMute: () => set((s) => ({ muted: !s.muted })),
-      setMuted: (muted: boolean) => set({ muted }),
+      setVolume: (volume: number) => {
+        const nextVolume = Math.round(Math.min(100, Math.max(0, volume)));
+        set({ volume: nextVolume, volumePreview: null, muted: nextVolume === 0 });
+      },
+      setVolumePreview: (volume: number) => set({
+        volumePreview: Math.round(Math.min(100, Math.max(0, volume))),
+      }),
+      clearVolumePreview: () => set({ volumePreview: null }),
     }),
-    { name: "shootbang-settings" },
+    {
+      name: "shootbang-settings",
+      version: 1,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<SettingsState>;
+        const storedVolume = typeof state.volume === "number"
+          ? state.volume
+          : state.muted ? 0 : 100;
+        const volume = Math.round(Math.min(100, Math.max(0, storedVolume)));
+        return {
+          ...state,
+          volume,
+          volumePreview: null,
+          muted: volume === 0,
+        } as SettingsState;
+      },
+      partialize: (state) => ({ ...state, volumePreview: null }),
+    },
   ),
 );
 

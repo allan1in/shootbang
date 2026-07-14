@@ -3,20 +3,26 @@ import { useSettingsStore } from "@/stores/gameStore";
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 
+export function getEffectiveVolume() {
+  const { volume, volumePreview } = useSettingsStore.getState();
+  return volumePreview ?? volume ?? 100;
+}
+
 function getMasterGain(): GainNode | null {
   if (!masterGain && audioCtx) {
     masterGain = audioCtx.createGain();
+    masterGain.gain.value = getEffectiveVolume() / 100;
     masterGain.connect(audioCtx.destination);
   }
   return masterGain;
 }
 
-export function setMasterMuted(muted: boolean) {
+export function setMasterVolume(volume: number) {
   const ctx = audioCtx;
   const gain = masterGain;
   if (!ctx || !gain) return;
   gain.gain.cancelScheduledValues(ctx.currentTime);
-  gain.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
+  gain.gain.setTargetAtTime(Math.min(100, Math.max(0, volume)) / 100, ctx.currentTime, 0.02);
 }
 
 if (typeof window !== "undefined") {
@@ -53,7 +59,7 @@ export function getMasterGainNode(): GainNode | null {
 }
 
 function playTone(frequency: number, volume: number, duration: number) {
-  if (useSettingsStore.getState().muted) return;
+  if (getEffectiveVolume() === 0) return;
   const ctx = getCtx();
   const gain = getMasterGain();
   if (!ctx || !gain) return;

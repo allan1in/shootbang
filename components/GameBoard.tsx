@@ -9,6 +9,7 @@ import { CountdownOverlay } from "@/components/CountdownOverlay";
 import { FinishedOverlay } from "@/components/FinishedOverlay";
 import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -16,36 +17,53 @@ import { useGameStore, useSettingsStore } from "@/stores/gameStore";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
-import { setMasterMuted } from "@/lib/sounds";
+import { setMasterVolume } from "@/lib/sounds";
 
 export default function GameBoard() {
   const settings = useSettings();
+  const {
+    openSettings: openTrainingSettings,
+    cancelSettings: cancelTrainingSettings,
+    saveSettings: saveTrainingSettings,
+  } = settings;
   const bridge = useR3FBridge();
   const { theme, setTheme } = useTheme();
-  const muted = useSettingsStore((s) => s.muted);
-  const toggleMute = useSettingsStore((s) => s.toggleMute);
+  const volume = useSettingsStore((s) => s.volume);
+  const volumePreview = useSettingsStore((s) => s.volumePreview);
+  const setVolume = useSettingsStore((s) => s.setVolume);
+  const setVolumePreview = useSettingsStore((s) => s.setVolumePreview);
+  const clearVolumePreview = useSettingsStore((s) => s.clearVolumePreview);
 
   useEffect(() => {
-    setMasterMuted(muted);
-  }, [muted]);
+    setMasterVolume(volumePreview ?? volume);
+  }, [volume, volumePreview]);
 
   // 主题面板状态
-  const [showThemePanel, setShowThemePanel] = useState(false);
-  const [tempTheme, setTempTheme] = useState<"default" | "thunderstorm" | "blizzard">(theme);
+  const [tempTheme, setTempTheme] = useState<Theme>(theme);
+  const [tempVolume, setTempVolumeDraft] = useState(volume);
 
-  const openTheme = useCallback(() => {
+  const openSettings = useCallback(() => {
+    openTrainingSettings();
+    clearVolumePreview();
     setTempTheme(theme);
-    setShowThemePanel(true);
-  }, [theme]);
+    setTempVolumeDraft(volume);
+  }, [clearVolumePreview, openTrainingSettings, theme, volume]);
 
-  const cancelTheme = useCallback(() => {
-    setShowThemePanel(false);
-  }, []);
+  const cancelSettings = useCallback(() => {
+    clearVolumePreview();
+    cancelTrainingSettings();
+  }, [cancelTrainingSettings, clearVolumePreview]);
 
-  const saveTheme = useCallback(() => {
+  const previewVolume = useCallback((nextVolume: number) => {
+    setTempVolumeDraft(nextVolume);
+    setVolumePreview(nextVolume);
+  }, [setVolumePreview]);
+
+  const saveSettings = useCallback(() => {
+    saveTrainingSettings();
     setTheme(tempTheme);
-    setShowThemePanel(false);
-  }, [tempTheme, setTheme]);
+    setVolume(tempVolume);
+  }, [saveTrainingSettings, setTheme, setVolume, tempTheme, tempVolume]);
 
   const game = useGameLogic({
     targetsRef: bridge.targetsRef,
@@ -54,6 +72,7 @@ export default function GameBoard() {
     mouseAccum: bridge.mouseAccum,
     containerRef: bridge.canvasRef,
   });
+  const { triggerStart, triggerResume } = game;
 
   // 稳定回调
   const handlePauseHome = useCallback(() => {
@@ -63,8 +82,8 @@ export default function GameBoard() {
 
   const handlePauseRestart = useCallback(() => {
     document.exitPointerLock();
-    game.triggerStart();
-  }, [game.triggerStart]);
+    triggerStart();
+  }, [triggerStart]);
 
   const handleFinishedHome = useCallback(() => {
     useGameStore.getState().setGameState("idle");
@@ -102,20 +121,23 @@ export default function GameBoard() {
         <PauseOverlay
           onHome={handlePauseHome}
           onRestart={handlePauseRestart}
-          onResume={game.triggerResume}
-          muted={muted}
-          onToggleMute={toggleMute}
+          onResume={triggerResume}
         />
       )}
 
       {/* 开始页面 */}
       {game.gameState === "idle" && (
         <IdleScreen
-          showSettings={settings.showSettings}
-          onStart={game.triggerStart}
-          onOpenSettings={settings.openSettings}
-          onCancelSettings={settings.cancelSettings}
-          onSaveSettings={settings.saveSettings}
+          onStart={triggerStart}
+          onOpenSettings={openSettings}
+        />
+      )}
+
+      {game.gameState === "idle" && (
+        <SettingsDialog
+          open={settings.showSettings}
+          onCancel={cancelSettings}
+          onSave={saveSettings}
           tempSensitivity={settings.tempSensitivity}
           tempGridSize={settings.tempGridSize}
           tempDuration={settings.tempDuration}
@@ -124,14 +146,10 @@ export default function GameBoard() {
           setTempDuration={settings.setTempDuration}
           tempTargetSize={settings.tempTargetSize}
           setTempTargetSize={settings.setTempTargetSize}
-          showThemePanel={showThemePanel}
-          onOpenTheme={openTheme}
-          onCancelTheme={cancelTheme}
-          onSaveTheme={saveTheme}
           tempTheme={tempTheme}
           setTempTheme={setTempTheme}
-          muted={muted}
-          onToggleMute={toggleMute}
+          tempVolume={tempVolume}
+          setTempVolume={previewVolume}
         />
       )}
 
@@ -139,10 +157,8 @@ export default function GameBoard() {
       {game.gameState === "finished" && (
         <FinishedOverlay
           stats={game.gameStats}
-          onRestart={game.triggerStart}
+          onRestart={triggerStart}
           onHome={handleFinishedHome}
-          muted={muted}
-          onToggleMute={toggleMute}
         />
       )}
 
