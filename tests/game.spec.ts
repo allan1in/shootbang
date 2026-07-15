@@ -22,6 +22,11 @@ interface ShootbangTestAPI {
   getTargetsInfo: () => TargetInfo[];
   getTimeLeft: () => number;
   getDuration: () => number;
+  getPointerInputMode: () => "none" | "raw" | "standard";
+  setPaused: (paused: boolean) => void;
+  recordHitTiming: () => void;
+  getHitIntervals: () => number[];
+  getAverageReactionTime: () => number;
   getGameStats: () => GameStats;
   setGameStats: (stats: Partial<GameStats>) => void;
 }
@@ -63,6 +68,33 @@ async function waitForCanvas(page: Page) {
   await page.waitForTimeout(500);
 }
 
+type PointerLockMockMode = "raw" | "fallback" | "fail";
+
+async function mockPointerLock(page: Page, mode: PointerLockMockMode) {
+  await page.addInitScript((mockMode) => {
+    const state = window as typeof window & {
+      __shootbangPointerLockRequests?: ({ unadjustedMovement?: boolean } | null)[];
+    };
+    state.__shootbangPointerLockRequests = [];
+    Element.prototype.requestPointerLock = function (options?: { unadjustedMovement?: boolean }) {
+      state.__shootbangPointerLockRequests!.push(options ?? null);
+      if (mockMode === "raw" || (mockMode === "fallback" && !options?.unadjustedMovement)) {
+        return Promise.resolve();
+      }
+      return Promise.reject(new DOMException("Pointer lock unavailable", "NotSupportedError"));
+    };
+  }, mode);
+}
+
+async function getPointerLockRequests(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbangPointerLockRequests?: ({ unadjustedMovement?: boolean } | null)[];
+    };
+    return state.__shootbangPointerLockRequests;
+  });
+}
+
 // ===== 空闲界面 =====
 
 test.describe("空闲界面", () => {
@@ -79,6 +111,11 @@ test.describe("空闲界面", () => {
     await expect(page.getByRole("button", { name: "设置" })).toBeVisible();
   });
 
+  test("首页不显示主题和静音入口", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "主题" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "静音" })).not.toBeVisible();
+  });
+
   test("canvas 场景已渲染", async ({ page }) => {
     const canvas = page.locator("canvas");
     await expect(canvas).toBeVisible();
@@ -87,6 +124,84 @@ test.describe("空闲界面", () => {
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
+  });
+});
+
+// ===== 原始鼠标输入 =====
+
+test.describe("Pointer Lock 原始鼠标输入", () => {
+  test("优先请求原始鼠标输入", async ({ page }) => {
+    await mockPointerLock(page, "raw");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("raw");
+    expect(await getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }]);
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true })).toBeVisible();
+  });
+
+  test("原始输入不可用时静默降级并在每次恢复时重试", async ({ page }) => {
+    await mockPointerLock(page, "fallback");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("standard");
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true }).last()).toBeVisible();
+    expect(await getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }, null]);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(true);
+    });
+    await page.getByRole("button", { name: "继续" }).click();
+
+    await expect.poll(() => getPointerLockRequests(page)).toEqual([
+      { unadjustedMovement: true },
+      null,
+      { unadjustedMovement: true },
+      null,
+    ]);
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true }).last()).toBeVisible();
+  });
+
+  test("两次锁定失败时不启动游戏或显示提示", async ({ page }) => {
+    await mockPointerLock(page, "fail");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect.poll(() => getPointerLockRequests(page)).toEqual([{ unadjustedMovement: true }, null]);
+    expect(await getGameState(page)).toBe("idle");
+    await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true })).not.toBeVisible();
+  });
+
+  test("退出指针锁定时清除输入模式", async ({ page }) => {
+    await mockPointerLock(page, "raw");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("raw");
+
+    await page.evaluate(() => document.dispatchEvent(new Event("pointerlockchange")));
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getPointerInputMode();
+    })).toBe("none");
   });
 });
 
@@ -101,8 +216,11 @@ test.describe("设置面板", () => {
   });
 
   test("打开设置面板显示灵敏度表单", async ({ page }) => {
-    await expect(page.getByText("设置")).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "训练" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "体验" })).toHaveAttribute("aria-selected", "false");
     await expect(page.getByText("灵敏度")).toBeVisible();
+    await expect(page.getByRole("radio", { name: "默认" })).not.toBeVisible();
   });
 
   test("修改灵敏度并保存", async ({ page }) => {
@@ -121,7 +239,7 @@ test.describe("设置面板", () => {
 
   test("取消关闭设置面板", async ({ page }) => {
     await page.getByText("取消").click();
-    await expect(page.getByRole("heading", { name: "设置" })).not.toBeVisible();
+    await expect(page.getByRole("dialog", { name: "设置" })).not.toBeVisible();
     await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
   });
 
@@ -144,6 +262,93 @@ test.describe("设置面板", () => {
       return JSON.parse(raw).state.targetSize;
     });
     expect(saved).toBe("large");
+  });
+
+  test("显示体验设置并保存主题和音量", async ({ page }) => {
+    await page.getByRole("tab", { name: "体验" }).click();
+    await expect(page.getByText("经典网格", { exact: true })).toBeVisible();
+    await expect(page.getByText("小心闪电", { exact: true })).toBeVisible();
+    await expect(page.getByText("寒风呼啸", { exact: true })).toBeVisible();
+    await page.getByRole("radio", { name: "暴雪" }).click();
+    await page.getByRole("slider", { name: "音量" }).fill("35");
+    const persistedBeforeSave = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("shootbang-settings") ?? "{}").state?.volume,
+    );
+    expect(persistedBeforeSave).toBe(100);
+    await page.getByRole("button", { name: "保存" }).click();
+
+    const saved = await page.evaluate(() => ({
+      theme: JSON.parse(localStorage.getItem("shootbang-theme") ?? "{}").state?.theme,
+      volume: JSON.parse(localStorage.getItem("shootbang-settings") ?? "{}").state?.volume,
+      muted: JSON.parse(localStorage.getItem("shootbang-settings") ?? "{}").state?.muted,
+    }));
+    expect(saved).toEqual({ theme: "blizzard", volume: 35, muted: false });
+  });
+
+  test("取消和 Esc 丢弃体验设置草稿，点击遮罩不关闭", async ({ page }) => {
+    await page.getByRole("tab", { name: "体验" }).click();
+    await page.getByRole("radio", { name: "雷雨" }).click();
+    await page.getByRole("slider", { name: "音量" }).fill("0");
+    await page.getByRole("button", { name: "取消" }).click();
+
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.getByRole("tab", { name: "体验" }).click();
+    await expect(page.getByRole("radio", { name: "默认" })).toBeChecked();
+    await expect(page.getByRole("slider", { name: "音量" })).toHaveValue("100");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "设置" })).not.toBeVisible();
+
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.getByRole("tab", { name: "体验" }).click();
+    await page.getByRole("radio", { name: "雷雨" }).click();
+    await page.locator('[data-slot="dialog-viewport"]').click({ position: { x: 1, y: 1 } });
+    await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "雷雨" })).toBeChecked();
+    await page.getByRole("button", { name: "取消" }).click();
+  });
+
+  test("切换标签保留草稿并使用半透明极简面板", async ({ page }) => {
+    const content = page.locator('[data-slot="dialog-content"]');
+    const overlay = page.locator('[data-slot="dialog-overlay"]');
+    await expect(content).toHaveClass(/w-\[22rem\]/);
+    await expect(content).toHaveClass(/bg-card\/60/);
+    await expect(content).toHaveClass(/backdrop-blur-xl/);
+    await expect(overlay).toHaveClass(/bg-background\/30/);
+    await expect(page.getByText("调整训练难度与体验偏好。", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("经典网格", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("关闭命中、未命中和倒计时音效", { exact: true })).not.toBeVisible();
+
+    const input = page.locator('input[type="number"]');
+    await input.fill("3.5");
+    const trainingPanel = (await content.boundingBox())!;
+    await page.getByRole("tab", { name: "体验" }).click();
+    const experiencePanel = (await content.boundingBox())!;
+    expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(trainingPanel.width - experiencePanel.width)).toBeLessThanOrEqual(1);
+    await expect(page.getByRole("radio", { name: "默认" })).toBeVisible();
+    const slider = page.getByRole("slider", { name: "音量" });
+    const control = page.locator('[data-slot="slider-control"]');
+    const track = page.locator('[data-slot="slider-track"]');
+    const thumb = page.locator('[data-slot="slider-thumb"]');
+    await expect(slider).toBeVisible();
+
+    await slider.fill("0");
+    const controlAtMin = (await control.boundingBox())!;
+    const trackAtMin = (await track.boundingBox())!;
+    const thumbAtMin = (await thumb.boundingBox())!;
+    expect(Math.abs(trackAtMin.width + thumbAtMin.width - controlAtMin.width)).toBeLessThanOrEqual(1);
+    expect(thumbAtMin.x).toBeGreaterThanOrEqual(controlAtMin.x - 0.5);
+
+    await slider.fill("100");
+    const controlAtMax = (await control.boundingBox())!;
+    const thumbAtMax = (await thumb.boundingBox())!;
+    expect(thumbAtMax.x + thumbAtMax.width).toBeLessThanOrEqual(
+      controlAtMax.x + controlAtMax.width + 0.5,
+    );
+    await expect(input).not.toBeVisible();
+
+    await page.getByRole("tab", { name: "训练" }).click();
+    await expect(input).toHaveValue("3.5");
   });
 });
 
@@ -178,6 +383,151 @@ test.describe("计时进度条", () => {
 
     const progress = page.locator('[data-slot="progress"]');
     await expect(progress).not.toBeVisible();
+  });
+});
+
+// ===== 暂停计时 =====
+
+test.describe("暂停计时", () => {
+  test("恢复后从暂停时的剩余时间继续", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(500);
+
+    const pausedAt = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(true);
+      return api.getTimeLeft();
+    });
+
+    await page.waitForTimeout(500);
+    const whilePaused = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTimeLeft();
+    });
+    expect(Math.abs(whilePaused - pausedAt)).toBeLessThan(0.1);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(false);
+    });
+    await page.waitForTimeout(500);
+
+    const afterResume = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return api.getTimeLeft();
+    });
+    expect(afterResume).toBeLessThan(pausedAt - 0.3);
+  });
+});
+
+// ===== 暂停界面 =====
+
+test.describe("暂停界面", () => {
+  test("不显示静音入口", async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+    await startGameDirect(page);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(true);
+    });
+
+    await expect(page.getByRole("button", { name: "继续" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "静音" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "取消静音" })).not.toBeVisible();
+  });
+});
+
+// ===== 平均反应时间 =====
+
+test.describe("平均反应时间", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/");
+    await waitForCanvas(page);
+  });
+
+  test("首次和连续命中使用有效训练时间", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+    });
+    await page.waitForTimeout(400);
+
+    const timing = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      return {
+        intervals: api.getHitIntervals(),
+        average: api.getAverageReactionTime(),
+      };
+    });
+
+    expect(timing.intervals).toHaveLength(2);
+    expect(timing.intervals[0]).toBeGreaterThan(250);
+    expect(timing.intervals[0]).toBeLessThan(800);
+    expect(timing.intervals[1]).toBeGreaterThan(250);
+    expect(timing.intervals[1]).toBeLessThan(800);
+    expect(timing.average).toBeGreaterThan(250);
+    expect(timing.average).toBeLessThan(800);
+  });
+
+  test("暂停和恢复倒计时不计入命中间隔", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      api.setPaused(true);
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.setPaused(false);
+      api.startCountdown();
+    });
+    await page.waitForTimeout(3200);
+    await page.waitForTimeout(300);
+
+    const secondInterval = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.recordHitTiming();
+      return api.getHitIntervals()[1];
+    });
+    expect(secondInterval).toBeGreaterThan(50);
+    expect(secondInterval).toBeLessThan(700);
+  });
+
+  test("重新开始会清空上一局的命中计时", async ({ page }) => {
+    await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.startGame();
+      api.recordHitTiming();
+      api.startGame();
+    });
+
+    const resetTiming = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        intervals: api.getHitIntervals(),
+        average: api.getAverageReactionTime(),
+      };
+    });
+    expect(resetTiming.intervals).toEqual([]);
+    expect(resetTiming.average).toBe(0);
   });
 });
 
@@ -230,6 +580,11 @@ test.describe("游戏结束", () => {
 
   test("显示重新开始按钮", async ({ page }) => {
     await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();
+  });
+
+  test("结算页不显示静音入口", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "静音" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "取消静音" })).not.toBeVisible();
   });
 
   test("显示返回首页按钮", async ({ page }) => {

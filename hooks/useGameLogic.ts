@@ -17,6 +17,7 @@ const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
 const DEFAULT_TARGET_SIZE = 0.405;
+type PointerInputMode = "none" | "raw" | "standard";
 
 interface UseGameLogicDeps {
   targetsRef: React.MutableRefObject<TargetState[]>;
@@ -42,12 +43,27 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
+  const pointerInputModeRef = useRef<PointerInputMode>("none");
 
   const hitsRef = useRef(0);
   const shotsRef = useRef(0);
-  const gameStartTimeRef = useRef(0);
-  const lastHitTimeRef = useRef(0);
+  const lastHitActiveTimeRef = useRef(0);
   const hitIntervalsRef = useRef<number[]>([]);
+
+  const recordHitTiming = useCallback(() => {
+    const durationMs = useSettingsStore.getState().duration * 1000;
+    const activeTime = Math.max(0, durationMs - timeLeftRef.current * 1000);
+    hitIntervalsRef.current.push(activeTime - lastHitActiveTimeRef.current);
+    lastHitActiveTimeRef.current = activeTime;
+  }, []);
+
+  const getAverageReactionTime = useCallback(() => {
+    if (hitIntervalsRef.current.length === 0) return 0;
+    return Math.round(
+      hitIntervalsRef.current.reduce((sum, interval) => sum + interval, 0) /
+        hitIntervalsRef.current.length,
+    );
+  }, []);
 
   // 鼠标移动 + 指针锁定事件
   useEffect(() => {
@@ -68,11 +84,14 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       if (locked && useGameStore.getState().gameState === "playing") {
         useGameStore.getState().setIsPaused(false);
       } else if (!locked && useGameStore.getState().gameState === "playing") {
+        pointerInputModeRef.current = "none";
         useGameStore.getState().setIsPaused(true);
         if (countdownTimer.current) {
           clearTimeout(countdownTimer.current);
           setCountdown(null);
         }
+      } else if (!locked) {
+        pointerInputModeRef.current = "none";
       }
     };
 
@@ -94,7 +113,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     useGameStore.getState().setIsPaused(false);
     hitsRef.current = 0;
     shotsRef.current = 0;
-    lastHitTimeRef.current = 0;
+    lastHitActiveTimeRef.current = 0;
     hitIntervalsRef.current = [];
 
     /* eslint-disable react-hooks/immutability */
@@ -136,15 +155,27 @@ export function useGameLogic(deps: UseGameLogicDeps) {
 
   const requestLockAndResume = useCallback(
     (onLocked: () => void) => {
-      containerRef.current
-        ?.requestPointerLock()
-        .then(() => {
-          onLocked();
-          startCountdown();
-          toast.dismiss();
-          toast.info("按 Esc 退出瞄准模式");
-        })
-        .catch(() => {});
+      const container = containerRef.current;
+      if (!container) return;
+
+      pointerInputModeRef.current = "none";
+      const completeLock = (inputMode: Exclude<PointerInputMode, "none">) => {
+        pointerInputModeRef.current = inputMode;
+        onLocked();
+        startCountdown();
+        toast.dismiss();
+        toast.info("按 Esc 退出瞄准模式");
+      };
+
+      container
+        .requestPointerLock({ unadjustedMovement: true })
+        .then(() => completeLock("raw"))
+        .catch(() => {
+          container
+            .requestPointerLock()
+            .then(() => completeLock("standard"))
+            .catch(() => {});
+        });
     },
     [startCountdown, containerRef],
   );
@@ -185,6 +216,11 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       },
       getTimeLeft: () => timeLeftRef.current,
       getDuration: () => useSettingsStore.getState().duration,
+      getPointerInputMode: () => pointerInputModeRef.current,
+      setPaused: (paused: boolean) => useGameStore.getState().setIsPaused(paused),
+      recordHitTiming: () => recordHitTiming(),
+      getHitIntervals: () => [...hitIntervalsRef.current],
+      getAverageReactionTime: () => getAverageReactionTime(),
       getGameStats: () => useGameStore.getState().gameStats,
       setGameStats: (stats: Partial<GameStats>) => {
         const prev = useGameStore.getState().gameStats;
@@ -194,7 +230,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     return () => {
       delete w.__shootbang_test;
     };
-  }, [targetsRef]);
+  }, [targetsRef, recordHitTiming, getAverageReactionTime]);
 
   // 组件卸载时清除倒计时
   useEffect(() => {
@@ -230,10 +266,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         playHitSound();
         hitTarget.mesh.visible = false;
         hitsRef.current++;
-        const now = Date.now();
-        const prev = lastHitTimeRef.current || gameStartTimeRef.current;
-        hitIntervalsRef.current.push(now - prev);
-        lastHitTimeRef.current = now;
+        recordHitTiming();
         spawnTarget(
           hitTarget,
           targetsRef.current,
@@ -244,7 +277,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     } else {
       playMissSound();
     }
-  }, [targetsRef, cameraRef, raycasterRef]);
+  }, [targetsRef, cameraRef, raycasterRef, recordHitTiming]);
 
   useEffect(() => {
     handleClickRef.current = handleClick;
@@ -270,11 +303,12 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   useEffect(() => {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
 
-    gameStartTimeRef.current = Date.now();
+    const segmentStartTime = Date.now();
+    const segmentStartRemaining = timeLeftRef.current;
     let tick = 0;
     const timer = setInterval(() => {
-      const elapsed = (Date.now() - gameStartTimeRef.current) / 1000;
-      timeLeftRef.current = Math.max(0, useSettingsStore.getState().duration - elapsed);
+      const elapsed = (Date.now() - segmentStartTime) / 1000;
+      timeLeftRef.current = Math.max(0, segmentStartRemaining - elapsed);
       if (++tick % 10 === 0) setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
         setTimeLeft(0);
@@ -282,9 +316,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         const totalShots = shotsRef.current;
         const hits = hitsRef.current;
         const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
-        const avgReactionTime = hitIntervalsRef.current.length > 0
-          ? Math.round(hitIntervalsRef.current.reduce((a, b) => a + b, 0) / hitIntervalsRef.current.length)
-          : 0;
+        const avgReactionTime = getAverageReactionTime();
         useGameStore.getState().setGameStats({ hits, totalShots, accuracy, avgReactionTime });
         hideAllTargets(targetsRef.current);
         document.exitPointerLock();
@@ -294,7 +326,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     }, 10);
 
     return () => clearInterval(timer);
-  }, [gameState, isPaused, countdown, targetsRef]);
+  }, [gameState, isPaused, countdown, targetsRef, getAverageReactionTime]);
 
   return {
     gameState,
