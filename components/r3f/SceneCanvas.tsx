@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { SceneBridge, CameraController, SceneLights, RoomWalls, TargetPool } from "./SceneSetup";
 import { Thunderstorm } from "./Thunderstorm";
 import { Blizzard } from "./Blizzard";
+import { FramePerformanceMonitor } from "./FramePerformanceMonitor";
 
 interface SceneCanvasProps {
   className?: string;
@@ -14,9 +15,10 @@ interface SceneCanvasProps {
   sceneProvider: (props: { children: ReactNode }) => ReactNode;
   gameState?: string;
   theme?: string;
+  gameSessionId: number;
 }
 
-export function SceneCanvas({ className, onCreated, children, sceneProvider: SceneProvider, gameState, theme }: SceneCanvasProps) {
+export function SceneCanvas({ className, onCreated, children, sceneProvider: SceneProvider, gameState, theme, gameSessionId }: SceneCanvasProps) {
   return (
     <Canvas
       gl={{
@@ -39,6 +41,7 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
       className={className}
       style={{ touchAction: "none" }}
     >
+      <FramePerformanceMonitor gameSessionId={gameSessionId} />
       <SceneProvider>
         <SceneBridge theme={theme} />
         <CameraController />

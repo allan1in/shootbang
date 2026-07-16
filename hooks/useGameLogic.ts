@@ -40,6 +40,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const setCountdown = useGameStore((s) => s.setCountdown);
 
   const [timeLeft, setTimeLeft] = useState(30);
+  const [gameSessionId, setGameSessionId] = useState(0);
   const timeLeftRef = useRef(30);
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
@@ -107,6 +108,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   // 开始游戏
   const startGame = useCallback(() => {
     const s = useSettingsStore.getState();
+    setGameSessionId((sessionId) => sessionId + 1);
     useGameStore.getState().setGameState("playing");
     timeLeftRef.current = s.duration;
     setTimeLeft(s.duration);
@@ -335,6 +337,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     countdown,
     timeLeft,
     timeLeftRef,
+    gameSessionId,
     triggerStart,
     triggerResume,
     startGame,

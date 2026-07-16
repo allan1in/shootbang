@@ -1,4 +1,4 @@
-Run `npm run check` first — if any step fails, fix the issues before proceeding.
+Run `pnpm check` first — if any step fails, fix the issues before proceeding.
 
 Then do the following:
 
