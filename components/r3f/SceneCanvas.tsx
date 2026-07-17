@@ -1,9 +1,15 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, type RefObject } from "react";
 import { Canvas, type RootState } from "@react-three/fiber";
 import * as THREE from "three";
-import { SceneBridge, CameraController, SceneLights, RoomWalls, TargetPool } from "./SceneSetup";
+import {
+  SceneBridge,
+  CameraController,
+  SceneLights,
+  RoomWalls,
+  TargetPool,
+} from "./SceneSetup";
 import { Thunderstorm } from "./Thunderstorm";
 import { Blizzard } from "./Blizzard";
 import { FramePerformanceMonitor } from "./FramePerformanceMonitor";
@@ -16,9 +22,19 @@ interface SceneCanvasProps {
   gameState?: string;
   theme?: string;
   gameSessionId: number;
+  timeLeftRef: RefObject<number>;
 }
 
-export function SceneCanvas({ className, onCreated, children, sceneProvider: SceneProvider, gameState, theme, gameSessionId }: SceneCanvasProps) {
+export function SceneCanvas({
+  className,
+  onCreated,
+  children,
+  sceneProvider: SceneProvider,
+  gameState,
+  theme,
+  gameSessionId,
+  timeLeftRef,
+}: SceneCanvasProps) {
   return (
     <Canvas
       gl={{
@@ -41,7 +57,10 @@ export function SceneCanvas({ className, onCreated, children, sceneProvider: Sce
       className={className}
       style={{ touchAction: "none" }}
     >
-      <FramePerformanceMonitor gameSessionId={gameSessionId} />
+      <FramePerformanceMonitor
+        gameSessionId={gameSessionId}
+        timeLeftRef={timeLeftRef}
+      />
       <SceneProvider>
         <SceneBridge theme={theme} />
         <CameraController />

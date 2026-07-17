@@ -1,291 +1,416 @@
-import { test, expect, type Page } from "@playwright/test";
-
-const FRAME_60HZ_MS = 16.67;
-const FRAME_144HZ_MS = 6.95;
+import { expect, test, type Page } from "@playwright/test";
 
 interface PerformanceReport {
-  thresholdVersion: string;
-  baselineFps: number;
+  monitorVersion: string;
+  gameSessionId: number;
+  observedPeakFps: number;
   averageFps: number;
-  p95FrameMs: number;
-  maxFrameMs: number;
-  hitchCount: number;
-  severeHitchCount: number;
-  longTaskCount: number;
-  longTaskTotalMs: number;
-  reasons: string[];
-  context: Record<string, unknown>;
+  latestFps: number;
+  declineRatio: number;
+  declineThresholdFps: number;
+  sampleDurationMs: number;
+  sampleCount: number;
+  context: {
+    theme: string;
+    dpr: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    trainingDurationSeconds: number;
+    activeTrainingTimeMs: number;
+  };
 }
 
-interface PerformanceResult {
-  report: PerformanceReport | null;
-  queued: boolean;
+interface MonitorEligibility {
+  gameState: string;
+  isPaused: boolean;
+  countdown: number | null;
+  isLocked: boolean;
+  isPageVisible: boolean;
+  isWindowFocused: boolean;
+  isContextAvailable: boolean;
+}
+
+interface CapturedEvent {
+  message: string;
+  level: string;
+  fingerprint: string[];
+  tags: Record<string, string>;
+  contexts: {
+    game_performance: Record<string, number | string>;
+    game_environment: Record<string, number | string>;
+  };
 }
 
 interface PerformanceTestApi {
   reset: () => void;
-  startGame: () => PerformanceReport[];
-  setActive: (active: boolean) => PerformanceReport[];
-  restartWindow: () => void;
-  injectFrames: (durationsMs: number[]) => PerformanceResult[];
-  injectLongTask: (durationMs: number) => void;
-  flush: () => PerformanceReport[];
+  startGame: () => number;
+  setActive: (active: boolean) => void;
+  advanceActiveTime: (durationMs: number) => void;
+  restartSampling: () => void;
+  simulateDecline: (sample: {
+    fps: number;
+    refreshrate: number;
+    averages: number[];
+  }) => PerformanceReport | null;
+  getBounds: (observedPeakFps: number) => [number, number];
+  canMonitor: (eligibility: MonitorEligibility) => boolean;
   getState: () => {
     active: boolean;
-    settlingRemainingMs: number;
-    baselineFps: number | null;
-    calibrationElapsedMs: number;
-    windowElapsedMs: number;
-    pendingReportCount: number;
-    sessionReportCount: number;
-    lastResult: PerformanceResult | null;
+    gameSessionId: number;
+    reportedCurrentGame: boolean;
+    samplingGeneration: number;
+    activeTrainingTimeMs: number;
   };
-  getPendingReports: () => PerformanceReport[];
-  getSentReports: () => PerformanceReport[];
-  getBreadcrumbCount: () => number;
-  getSentryConfig: () => { message: string; fingerprint: string };
+  getRuntimeState: () => {
+    active: boolean;
+    gameSessionId: number;
+    samplingGeneration: number;
+  };
+  getReports: () => PerformanceReport[];
+  getCapturedEvents: () => CapturedEvent[];
+  getMonitorConfig: () => {
+    ms: number;
+    iterations: number;
+    threshold: number;
+    lowerBoundRatio: number;
+    upperBoundRatio: number;
+    version: string;
+  };
+  getSentryConfig: () => {
+    messagePrefix: string;
+    fingerprint: string;
+    customPerformanceBreadcrumbs: boolean;
+  };
 }
 
-async function getApi(page: Page) {
-  return page.evaluateHandle(() => {
-    const testWindow = window as typeof window & {
-      __shootbang_performance_test?: PerformanceTestApi;
+declare global {
+  interface Window {
+    __shootbang_performance_test?: PerformanceTestApi;
+    __shootbang_test?: {
+      startGame: () => void;
+      setPaused: (paused: boolean) => void;
     };
-    if (!testWindow.__shootbang_performance_test) {
-      throw new Error("Performance test API is unavailable");
-    }
-    return testWindow.__shootbang_performance_test;
-  });
+  }
 }
 
-async function initializeMonitor(page: Page, frameMs: number) {
-  await page.evaluate(
-    ({ settlingFrames, calibrationFrames, duration }) => {
-      const api = (window as typeof window & {
-        __shootbang_performance_test: PerformanceTestApi;
-      }).__shootbang_performance_test;
-      api.reset();
-      api.startGame();
-      api.setActive(true);
-      api.injectFrames([
-        duration,
-        ...Array(settlingFrames).fill(duration),
-        ...Array(calibrationFrames).fill(duration),
-      ]);
-    },
-    {
-      duration: frameMs,
-      settlingFrames: Math.ceil(1_000 / frameMs),
-      calibrationFrames: Math.ceil(2_000 / frameMs),
-    },
+async function waitForPerformanceApi(page: Page) {
+  await page.waitForSelector("canvas", { timeout: 10_000 });
+  await page.waitForFunction(
+    () => "__shootbang_performance_test" in window,
   );
 }
 
-async function injectFrames(page: Page, frames: number[]) {
-  return page.evaluate((durations) => {
-    const api = (window as typeof window & {
-      __shootbang_performance_test: PerformanceTestApi;
-    }).__shootbang_performance_test;
-    return api.injectFrames(durations);
-  }, frames);
-}
+const DECLINE_SAMPLE = {
+  fps: 78,
+  refreshrate: 100,
+  averages: [70, 72, 74, 76, 78, 70, 72, 74, 76, 78],
+};
 
-async function getState(page: Page) {
-  return page.evaluate(() => {
-    const api = (window as typeof window & {
-      __shootbang_performance_test: PerformanceTestApi;
-    }).__shootbang_performance_test;
-    return api.getState();
-  });
-}
-
-test.describe("游戏卡顿监控", () => {
+test.describe("游戏性能下降监控", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.waitForSelector("canvas", { timeout: 10_000 });
-    await expect.poll(async () => {
-      const handle = await getApi(page).catch(() => null);
-      await handle?.dispose();
-      return Boolean(handle);
-    }).toBe(true);
+    await waitForPerformanceApi(page);
   });
 
-  test("稳定 60Hz 和 144Hz 不产生告警", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    let results = await injectFrames(page, Array(300).fill(FRAME_60HZ_MS));
-    expect(results).toHaveLength(1);
-    expect(results[0].report).toBeNull();
-    expect((await getState(page)).baselineFps).toBeCloseTo(60, 0);
-
-    await initializeMonitor(page, FRAME_144HZ_MS);
-    results = await injectFrames(page, Array(720).fill(FRAME_144HZ_MS));
-    expect(results).toHaveLength(1);
-    expect(results[0].report).toBeNull();
-    expect((await getState(page)).baselineFps).toBeCloseTo(144, 0);
-  });
-
-  test("60Hz 与 144Hz 环境使用动态平均帧率门槛", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    let results = await injectFrames(page, Array(264).fill(19));
-    expect(results[0].report?.reasons).toContain("average_fps");
-    expect(results[0].report?.averageFps).toBeLessThan(55);
-
-    await initializeMonitor(page, FRAME_144HZ_MS);
-    results = await injectFrames(page, Array(550).fill(9.1));
-    expect(results[0].report?.reasons).toContain("average_fps");
-    expect(results[0].report?.baselineFps).toBeCloseTo(144, 0);
-  });
-
-  test("p95、重复卡顿和严重冻结可以独立触发", async ({ page }) => {
-    await initializeMonitor(page, FRAME_144HZ_MS);
-    let results = await injectFrames(page, [
-      ...Array(40).fill(26),
-      ...Array(570).fill(FRAME_144HZ_MS),
-    ]);
-    expect(results[0].report?.reasons).toEqual(["p95_frame_time"]);
-
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    results = await injectFrames(page, [
-      ...Array(295).fill(FRAME_60HZ_MS),
-      60,
-      60,
-    ]);
-    expect(results[0].report?.reasons).toEqual(["repeated_hitches"]);
-
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    results = await injectFrames(page, [
-      ...Array(294).fill(FRAME_60HZ_MS),
-      101,
-    ]);
-    expect(results[0].report?.reasons).toEqual(["severe_hitch"]);
-  });
-
-  test("等于 50ms 或 100ms 的边界值不触发对应条件", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    let results = await injectFrames(page, [
-      ...Array(294).fill(FRAME_60HZ_MS),
-      50,
-      50,
-    ]);
-    expect(results[0].report).toBeNull();
-
-    results = await injectFrames(page, [
-      ...Array(294).fill(FRAME_60HZ_MS),
-      100,
-    ]);
-    expect(results[0].report).toBeNull();
-  });
-
-  test("暂停会丢弃部分窗口，恢复首帧和稳定期不参与采样", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    await injectFrames(page, [101, ...Array(50).fill(FRAME_60HZ_MS)]);
-
-    await page.evaluate((frameMs) => {
-      const api = (window as typeof window & {
-        __shootbang_performance_test: PerformanceTestApi;
-      }).__shootbang_performance_test;
-      api.setActive(false);
-      api.setActive(true);
-      api.injectFrames([
-        500,
-        ...Array(60).fill(frameMs),
-        ...Array(300).fill(frameMs),
-      ]);
-    }, FRAME_60HZ_MS);
-
-    const state = await getState(page);
-    expect(state.lastResult?.report).toBeNull();
-    expect(state.pendingReportCount).toBe(0);
-  });
-
-  test("环境变化重置当前窗口，新游戏重校准但保留会话限流计数", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    const result = await page.evaluate((frameMs) => {
-      const api = (window as typeof window & {
-        __shootbang_performance_test: PerformanceTestApi;
-      }).__shootbang_performance_test;
-
-      api.injectFrames([101, ...Array(50).fill(frameMs)]);
-      api.restartWindow();
-      api.injectFrames([
-        500,
-        ...Array(60).fill(frameMs),
-        ...Array(300).fill(frameMs),
-      ]);
-      api.injectFrames([...Array(294).fill(frameMs), 101]);
-      const beforeNewGame = api.getState();
-      api.startGame();
+  test("使用 250ms、10 次采样和相对 FPS 边界", async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const api = window.__shootbang_performance_test!;
+      api.reset();
       return {
-        beforeNewGame,
-        afterNewGame: api.getState(),
-        sent: api.getSentReports(),
+        config: api.getMonitorConfig(),
+        bounds60: api.getBounds(60),
+        bounds144: api.getBounds(144),
       };
-    }, FRAME_60HZ_MS);
+    });
 
-    expect(result.beforeNewGame.pendingReportCount).toBe(1);
-    expect(result.afterNewGame.baselineFps).toBeNull();
-    expect(result.afterNewGame.sessionReportCount).toBe(1);
-    expect(result.sent).toHaveLength(1);
+    expect(result.config).toEqual({
+      ms: 250,
+      iterations: 10,
+      threshold: 0.75,
+      lowerBoundRatio: 0.8,
+      upperBoundRatio: 0.9,
+      version: "drei-simple-v1",
+    });
+    expect(result.bounds60).toEqual([48, 54]);
+    expect(result.bounds144).toEqual([115.2, 129.6]);
   });
 
-  test("Long Task 只作为异常窗口的诊断数据", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    const results = await page.evaluate((frameMs) => {
-      const api = (window as typeof window & {
-        __shootbang_performance_test: PerformanceTestApi;
-      }).__shootbang_performance_test;
-      api.injectLongTask(75);
-      return api.injectFrames([
-        ...Array(294).fill(frameMs),
-        101,
-      ]);
-    }, FRAME_60HZ_MS);
+  test("生成不含原始样本的最小报告", async ({ page }) => {
+    const report = await page.evaluate((sample) => {
+      const api = window.__shootbang_performance_test!;
+      api.reset();
+      api.startGame();
+      api.setActive(true);
+      api.advanceActiveTime(1_234);
+      return api.simulateDecline(sample);
+    }, DECLINE_SAMPLE);
 
-    expect(results[0].report?.longTaskCount).toBe(1);
-    expect(results[0].report?.longTaskTotalMs).toBe(75);
-    expect(results[0].report?.reasons).not.toContain("long_task");
+    expect(report).toMatchObject({
+      monitorVersion: "drei-simple-v1",
+      gameSessionId: 1,
+      observedPeakFps: 100,
+      averageFps: 74,
+      latestFps: 78,
+      declineRatio: 0.26,
+      declineThresholdFps: 80,
+      sampleDurationMs: 2_500,
+      sampleCount: 10,
+      context: {
+        theme: "default",
+        dpr: 1,
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        trainingDurationSeconds: 30,
+        activeTrainingTimeMs: 1_234,
+      },
+    });
+    expect(report).not.toHaveProperty("averages");
+    expect(report).not.toHaveProperty("frames");
+    expect(report).not.toHaveProperty("p95FrameMs");
+    expect(report).not.toHaveProperty("longTaskCount");
   });
 
-  test("每个异常窗口记录 breadcrumb，但每页最多发送三条", async ({ page }) => {
-    await initializeMonitor(page, FRAME_60HZ_MS);
-    const result = await page.evaluate((frameMs) => {
-      const api = (window as typeof window & {
-        __shootbang_performance_test: PerformanceTestApi;
-      }).__shootbang_performance_test;
-      const severeWindow = [
-        ...Array(294).fill(frameMs),
-        101,
-      ];
-      for (let index = 0; index < 4; index += 1) {
-        api.injectFrames(severeWindow);
-      }
-      const pendingBeforePause = api.getPendingReports();
+  test("同一局只报告一次，暂停恢复不重置门控或累计暂停时间", async ({
+    page,
+  }) => {
+    const result = await page.evaluate((sample) => {
+      const api = window.__shootbang_performance_test!;
+      api.reset();
+      api.startGame();
+      api.setActive(true);
+      api.advanceActiveTime(500);
+      const first = api.simulateDecline(sample);
+      const duplicate = api.simulateDecline(sample);
+
       api.setActive(false);
+      api.advanceActiveTime(1_000);
+      const pausedState = api.getState();
+      const whilePaused = api.simulateDecline(sample);
+
+      api.setActive(true);
+      api.advanceActiveTime(250);
+      const afterResume = api.simulateDecline(sample);
       return {
-        pendingBeforePause,
-        sent: api.getSentReports(),
-        state: api.getState(),
-        breadcrumbCount: api.getBreadcrumbCount(),
+        first,
+        duplicate,
+        whilePaused,
+        afterResume,
+        pausedState,
+        finalState: api.getState(),
+        reports: api.getReports(),
+      };
+    }, DECLINE_SAMPLE);
+
+    expect(result.first).not.toBeNull();
+    expect(result.duplicate).toBeNull();
+    expect(result.whilePaused).toBeNull();
+    expect(result.afterResume).toBeNull();
+    expect(result.pausedState.activeTrainingTimeMs).toBe(500);
+    expect(result.finalState.activeTrainingTimeMs).toBe(750);
+    expect(result.finalState.reportedCurrentGame).toBe(true);
+    expect(result.reports).toHaveLength(1);
+  });
+
+  test("新一局产生不同消息，但继续使用同一 Sentry fingerprint", async ({
+    page,
+  }) => {
+    const result = await page.evaluate((sample) => {
+      const api = window.__shootbang_performance_test!;
+      api.reset();
+
+      api.startGame();
+      api.setActive(true);
+      api.simulateDecline(sample);
+
+      api.startGame();
+      api.setActive(true);
+      api.simulateDecline(sample);
+
+      return {
+        reports: api.getReports(),
+        events: api.getCapturedEvents(),
         sentry: api.getSentryConfig(),
       };
-    }, FRAME_60HZ_MS);
+    }, DECLINE_SAMPLE);
 
-    expect(result.breadcrumbCount).toBe(4);
-    expect(result.pendingBeforePause).toHaveLength(3);
-    expect(result.sent).toHaveLength(3);
-    expect(result.state.sessionReportCount).toBe(3);
-    expect(result.sent.every((report) => report.thresholdVersion === "strict-v1")).toBe(true);
-    expect(result.sentry).toEqual({
-      message: "Game render stutter detected",
-      fingerprint: "shootbang-game-stutter-v1",
-    });
-    expect(result.sent[0]).not.toHaveProperty("frames");
-    expect(result.sent[0].context).toEqual({
+    expect(result.reports.map((report) => report.gameSessionId)).toEqual([1, 2]);
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0].message).toContain("[game 1]");
+    expect(result.events[1].message).toContain("[game 2]");
+    expect(result.events[0].message).not.toBe(result.events[1].message);
+    expect(result.events[0].fingerprint).toEqual([
+      "shootbang-performance-decline-v1",
+    ]);
+    expect(result.events[1].fingerprint).toEqual(
+      result.events[0].fingerprint,
+    );
+    expect(result.events.every((event) => event.level === "warning")).toBe(true);
+    expect(result.events[0].tags).toEqual({
+      monitor_version: "drei-simple-v1",
       theme: "default",
-      dpr: 1,
-      viewportWidth: 1280,
-      viewportHeight: 720,
-      trainingDurationSeconds: 30,
+      component: "game-render-loop",
     });
+    expect(result.events[0].contexts).toEqual({
+      game_performance: {
+        game_number: 1,
+        observed_peak_fps: 100,
+        average_fps: 74,
+        latest_fps: 78,
+        decline_ratio: 0.26,
+        decline_threshold_fps: 80,
+        sample_duration_ms: 2_500,
+        sample_count: 10,
+        active_training_time_ms: 0,
+      },
+      game_environment: {
+        theme: "default",
+        dpr: 1,
+        viewport_width: 1280,
+        viewport_height: 720,
+        training_duration_seconds: 30,
+      },
+    });
+    expect(result.sentry).toEqual({
+      messagePrefix: "Game performance decline detected",
+      fingerprint: "shootbang-performance-decline-v1",
+      customPerformanceBreadcrumbs: false,
+    });
+  });
+
+  test("只在完整的有效训练条件下接受下降事件", async ({ page }) => {
+    const result = await page.evaluate((sample) => {
+      const api = window.__shootbang_performance_test!;
+      const valid: MonitorEligibility = {
+        gameState: "playing",
+        isPaused: false,
+        countdown: null,
+        isLocked: true,
+        isPageVisible: true,
+        isWindowFocused: true,
+        isContextAvailable: true,
+      };
+      const invalid = [
+        { ...valid, gameState: "idle" },
+        { ...valid, isPaused: true },
+        { ...valid, countdown: 3 },
+        { ...valid, isLocked: false },
+        { ...valid, isPageVisible: false },
+        { ...valid, isWindowFocused: false },
+        { ...valid, isContextAvailable: false },
+      ];
+
+      api.reset();
+      api.startGame();
+      const inactiveReport = api.simulateDecline(sample);
+      return {
+        valid: api.canMonitor(valid),
+        invalid: invalid.map((eligibility) => api.canMonitor(eligibility)),
+        inactiveReport,
+        reportCount: api.getReports().length,
+      };
+    }, DECLINE_SAMPLE);
+
+    expect(result.valid).toBe(true);
+    expect(result.invalid).toEqual(Array(7).fill(false));
+    expect(result.inactiveReport).toBeNull();
+    expect(result.reportCount).toBe(0);
+  });
+
+  test("真实组件会随训练生命周期卸载并在 resize 后重建采样", async ({
+    page,
+  }) => {
+    const runtimeState = () =>
+      page.evaluate(
+        () => window.__shootbang_performance_test!.getRuntimeState(),
+      );
+
+    expect((await runtimeState()).active).toBe(false);
+
+    await page.evaluate(() => {
+      window.__shootbang_test!.startGame();
+      Object.defineProperty(document, "pointerLockElement", {
+        configurable: true,
+        value: document.querySelector("canvas"),
+      });
+      document.dispatchEvent(new Event("pointerlockchange"));
+    });
+    await expect.poll(async () => (await runtimeState()).active).toBe(true);
+
+    await page.evaluate(() => window.__shootbang_test!.setPaused(true));
+    await expect.poll(async () => (await runtimeState()).active).toBe(false);
+    await page.evaluate(() => window.__shootbang_test!.setPaused(false));
+    await expect.poll(async () => (await runtimeState()).active).toBe(true);
+
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect.poll(async () => (await runtimeState()).active).toBe(false);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(async () => (await runtimeState()).active).toBe(true);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "hidden",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(async () => (await runtimeState()).active).toBe(false);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "visible",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(async () => (await runtimeState()).active).toBe(true);
+
+    const generationBeforeResize = (await runtimeState()).samplingGeneration;
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await expect
+      .poll(async () => (await runtimeState()).samplingGeneration)
+      .toBeGreaterThan(generationBeforeResize);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, "pointerLockElement", {
+        configurable: true,
+        value: null,
+      });
+      document.dispatchEvent(new Event("pointerlockchange"));
+    });
+    await expect.poll(async () => (await runtimeState()).active).toBe(false);
+  });
+
+  test("resize 或 DPR 重置采样，但不会解除本局报告门控", async ({ page }) => {
+    const result = await page.evaluate((sample) => {
+      const api = window.__shootbang_performance_test!;
+      api.reset();
+      api.startGame();
+      api.setActive(true);
+      api.simulateDecline(sample);
+
+      api.restartSampling();
+      api.restartSampling();
+      const afterRestart = api.getState();
+      const duplicate = api.simulateDecline(sample);
+
+      api.startGame();
+      const newGameState = api.getState();
+      api.setActive(true);
+      const nextGame = api.simulateDecline(sample);
+      return {
+        afterRestart,
+        duplicate,
+        newGameState,
+        nextGame,
+        reportCount: api.getReports().length,
+      };
+    }, DECLINE_SAMPLE);
+
+    expect(result.afterRestart.samplingGeneration).toBe(2);
+    expect(result.afterRestart.reportedCurrentGame).toBe(true);
+    expect(result.duplicate).toBeNull();
+    expect(result.newGameState.reportedCurrentGame).toBe(false);
+    expect(result.newGameState.activeTrainingTimeMs).toBe(0);
+    expect(result.nextGame).not.toBeNull();
+    expect(result.reportCount).toBe(2);
   });
 });

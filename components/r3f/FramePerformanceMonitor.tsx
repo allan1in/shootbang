@@ -1,186 +1,286 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import {
+  PerformanceMonitor,
+  type PerformanceMonitorApi,
+} from "@react-three/drei";
+import { useThree } from "@react-three/fiber";
 import * as Sentry from "@sentry/nextjs";
 import {
-  FramePerformanceMonitorCore,
-  type FramePerformanceReport,
+  PERFORMANCE_MONITOR_CONFIG,
+  PERFORMANCE_SENTRY_FINGERPRINT,
+  PERFORMANCE_SENTRY_MESSAGE_PREFIX,
+  createPerformanceSentryEvent,
+  gatePerformanceDecline,
+  getPerformanceBounds,
+  shouldMonitorPerformance,
+  type PerformanceDeclineReport,
+  type PerformanceMonitorEligibility,
   type PerformanceReportContext,
-} from "@/lib/framePerformance";
+  type PerformanceSampleSnapshot,
+  type PerformanceSentryEvent,
+} from "@/lib/performanceMonitoring";
 import {
   useGameStore,
   useSettingsStore,
   useThemeStore,
 } from "@/stores/gameStore";
 
-const SENTRY_MESSAGE = "Game render stutter detected";
-const SENTRY_FINGERPRINT = "shootbang-game-stutter-v1";
+interface MemoryCapture {
+  report: PerformanceDeclineReport;
+  event: PerformanceSentryEvent;
+}
 
-function getReportContext(): PerformanceReportContext {
+interface RuntimeMonitorState {
+  active: boolean;
+  gameSessionId: number;
+  samplingGeneration: number;
+}
+
+const DEVELOPMENT_CONTEXT: Omit<
+  PerformanceReportContext,
+  "activeTrainingTimeMs"
+> = {
+  theme: "default",
+  dpr: 1,
+  viewportWidth: 1280,
+  viewportHeight: 720,
+  trainingDurationSeconds: 30,
+};
+
+function copyReport(report: PerformanceDeclineReport) {
+  return { ...report, context: { ...report.context } };
+}
+
+function copyEvent(event: PerformanceSentryEvent) {
   return {
-    theme: useThemeStore.getState().theme,
-    dpr: window.devicePixelRatio,
-    viewportWidth: window.innerWidth,
-    viewportHeight: window.innerHeight,
-    trainingDurationSeconds: useSettingsStore.getState().duration,
-  };
-}
-
-function reportToSentry(report: FramePerformanceReport) {
-  if (process.env.NODE_ENV !== "production") return;
-
-  Sentry.withScope((scope) => {
-    scope.setLevel("warning");
-    scope.setFingerprint([SENTRY_FINGERPRINT]);
-    scope.setTag("component", "game-render-loop");
-    scope.setTag("threshold_version", report.thresholdVersion);
-    scope.setTag("theme", report.context.theme);
-    scope.setTag("stutter_reasons", report.reasons.join(","));
-    scope.setContext("game_performance", {
-      baseline_fps: report.baselineFps,
-      baseline_frame_ms: report.baselineFrameMs,
-      average_fps: report.averageFps,
-      average_fps_threshold: report.averageFpsThreshold,
-      p95_frame_ms: report.p95FrameMs,
-      p95_frame_ms_threshold: report.p95FrameMsThreshold,
-      max_frame_ms: report.maxFrameMs,
-      hitch_count: report.hitchCount,
-      severe_hitch_count: report.severeHitchCount,
-      long_task_count: report.longTaskCount,
-      long_task_total_ms: report.longTaskTotalMs,
-      long_task_max_ms: report.longTaskMaxMs,
-      window_duration_ms: report.durationMs,
-      sample_count: report.sampleCount,
-      reasons: report.reasons.join(","),
-    });
-    scope.setContext("game_environment", {
-      theme: report.context.theme,
-      dpr: report.context.dpr,
-      viewport_width: report.context.viewportWidth,
-      viewport_height: report.context.viewportHeight,
-      training_duration_seconds: report.context.trainingDurationSeconds,
-    });
-    Sentry.captureMessage(SENTRY_MESSAGE);
-  });
-}
-
-function addPerformanceBreadcrumb(report: FramePerformanceReport) {
-  if (process.env.NODE_ENV !== "production") return;
-
-  Sentry.addBreadcrumb({
-    category: "game.performance",
-    message: SENTRY_MESSAGE,
-    level: "warning",
-    data: {
-      threshold_version: report.thresholdVersion,
-      reasons: report.reasons.join(","),
-      baseline_fps: report.baselineFps,
-      average_fps: report.averageFps,
-      p95_frame_ms: report.p95FrameMs,
-      max_frame_ms: report.maxFrameMs,
-      hitch_count: report.hitchCount,
-      severe_hitch_count: report.severeHitchCount,
+    ...event,
+    fingerprint: [...event.fingerprint],
+    tags: { ...event.tags },
+    contexts: {
+      game_performance: { ...event.contexts.game_performance },
+      game_environment: { ...event.contexts.game_environment },
     },
-  });
+  };
 }
 
-function createDevelopmentTestApi() {
-  const core = new FramePerformanceMonitorCore();
-  const sentReports: FramePerformanceReport[] = [];
-  let breadcrumbCount = 0;
-  const context: PerformanceReportContext = {
-    theme: "default",
-    dpr: 1,
-    viewportWidth: 1280,
-    viewportHeight: 720,
-    trainingDurationSeconds: 30,
-  };
+function createDevelopmentTestApi(
+  captures: MemoryCapture[],
+  getRuntimeState: () => RuntimeMonitorState,
+) {
+  let gameSessionId = 0;
+  let reportedGameSessionId: number | null = null;
+  let active = false;
+  let activeTrainingTimeMs = 0;
+  let samplingGeneration = 0;
 
-  const collectReports = (reports: FramePerformanceReport[]) => {
-    sentReports.push(...reports);
-    return reports;
+  const simulateDecline = ({
+    fps,
+    refreshrate,
+    averages,
+  }: {
+    fps: number;
+    refreshrate: number;
+    averages: number[];
+  }) => {
+    const sample: PerformanceSampleSnapshot = {
+      latestFps: fps,
+      observedPeakFps: refreshrate,
+      averages: [...averages],
+    };
+    const result = gatePerformanceDecline({
+      active,
+      gameSessionId,
+      reportedGameSessionId,
+      sample,
+      context: { ...DEVELOPMENT_CONTEXT, activeTrainingTimeMs },
+    });
+    reportedGameSessionId = result.reportedGameSessionId;
+    if (!result.report) return null;
+
+    captures.push({
+      report: result.report,
+      event: createPerformanceSentryEvent(result.report),
+    });
+    return copyReport(result.report);
   };
 
   return {
     reset: () => {
-      core.resetSession();
-      sentReports.length = 0;
-      breadcrumbCount = 0;
+      gameSessionId = 0;
+      reportedGameSessionId = null;
+      active = false;
+      activeTrainingTimeMs = 0;
+      samplingGeneration = 0;
+      captures.length = 0;
     },
-    startGame: () => collectReports(core.startGame()),
-    setActive: (active: boolean) => collectReports(core.setActive(active)),
-    restartWindow: () => core.restartWindow(),
-    injectFrames: (durationsMs: number[]) => {
-      const results = [];
-      for (const durationMs of durationsMs) {
-        const result = core.recordFrame(durationMs, context);
-        if (result) {
-          results.push(result);
-          if (result.report) breadcrumbCount += 1;
-        }
+    startGame: () => {
+      gameSessionId += 1;
+      active = false;
+      activeTrainingTimeMs = 0;
+      return gameSessionId;
+    },
+    setActive: (nextActive: boolean) => {
+      active = nextActive;
+    },
+    advanceActiveTime: (durationMs: number) => {
+      if (active && Number.isFinite(durationMs) && durationMs > 0) {
+        activeTrainingTimeMs += durationMs;
       }
-      return results;
     },
-    injectLongTask: (durationMs: number) => core.recordLongTask(durationMs),
-    flush: () => collectReports(core.drainReports()),
-    getState: () => core.getState(),
-    getPendingReports: () => core.getPendingReports(),
-    getSentReports: () => sentReports.map((report) => ({
-      ...report,
-      reasons: [...report.reasons],
-      context: { ...report.context },
-    })),
-    getBreadcrumbCount: () => breadcrumbCount,
-    getSentryConfig: () => ({
-      message: SENTRY_MESSAGE,
-      fingerprint: SENTRY_FINGERPRINT,
+    restartSampling: () => {
+      samplingGeneration += 1;
+    },
+    simulateDecline,
+    getBounds: (observedPeakFps: number) =>
+      getPerformanceBounds(observedPeakFps),
+    canMonitor: (eligibility: PerformanceMonitorEligibility) =>
+      shouldMonitorPerformance(eligibility),
+    getState: () => ({
+      active,
+      gameSessionId,
+      reportedCurrentGame:
+        gameSessionId > 0 && reportedGameSessionId === gameSessionId,
+      samplingGeneration,
+      activeTrainingTimeMs,
     }),
+    getRuntimeState: () => ({ ...getRuntimeState() }),
+    getReports: () => captures.map(({ report }) => copyReport(report)),
+    getCapturedEvents: () => captures.map(({ event }) => copyEvent(event)),
+    getMonitorConfig: () => ({ ...PERFORMANCE_MONITOR_CONFIG }),
+    getSentryConfig: () => ({
+      messagePrefix: PERFORMANCE_SENTRY_MESSAGE_PREFIX,
+      fingerprint: PERFORMANCE_SENTRY_FINGERPRINT,
+      customPerformanceBreadcrumbs: false,
+    }),
+  };
+}
+
+function capturePerformanceEvent(
+  report: PerformanceDeclineReport,
+  developmentCaptures: MemoryCapture[],
+) {
+  const event = createPerformanceSentryEvent(report);
+  if (process.env.NODE_ENV !== "production") {
+    developmentCaptures.push({ report, event });
+    return;
+  }
+
+  Sentry.captureEvent({
+    message: event.message,
+    level: event.level,
+    fingerprint: event.fingerprint,
+    tags: event.tags,
+    contexts: event.contexts,
+  });
+}
+
+function snapshotPerformanceApi(
+  api: PerformanceMonitorApi,
+): PerformanceSampleSnapshot {
+  return {
+    latestFps: api.fps,
+    observedPeakFps: api.refreshrate,
+    averages: [...api.averages],
   };
 }
 
 export function FramePerformanceMonitor({
   gameSessionId,
+  timeLeftRef,
 }: {
   gameSessionId: number;
+  timeLeftRef: RefObject<number>;
 }) {
-  const [core] = useState(() => new FramePerformanceMonitorCore());
-  const lastDprRef = useRef(
-    typeof window === "undefined" ? 1 : window.devicePixelRatio,
-  );
   const gameState = useGameStore((state) => state.gameState);
   const isPaused = useGameStore((state) => state.isPaused);
   const isLocked = useGameStore((state) => state.isLocked);
   const countdown = useGameStore((state) => state.countdown);
-  const canvas = useThree((state) => state.gl.domElement);
+  const gl = useThree((state) => state.gl);
+  const canvas = gl.domElement;
   const [isPageVisible, setIsPageVisible] = useState(() =>
-    typeof document === "undefined" ? true : document.visibilityState === "visible",
+    typeof document === "undefined"
+      ? true
+      : document.visibilityState === "visible",
   );
   const [isWindowFocused, setIsWindowFocused] = useState(() =>
     typeof document === "undefined" ? true : document.hasFocus(),
   );
   const [isContextAvailable, setIsContextAvailable] = useState(true);
+  const isContextAvailableRef = useRef(true);
+  const [samplingGeneration, setSamplingGeneration] = useState(0);
+  const reportedGameSessionIdRef = useRef<number | null>(null);
+  const developmentCapturesRef = useRef<MemoryCapture[]>([]);
+  const runtimeStateRef = useRef<RuntimeMonitorState>({
+    active: false,
+    gameSessionId,
+    samplingGeneration: 0,
+  });
 
-  const flushReports = useCallback((reports: FramePerformanceReport[]) => {
-    for (const report of reports) reportToSentry(report);
+  const active = shouldMonitorPerformance({
+    gameState,
+    isPaused,
+    countdown,
+    isLocked,
+    isPageVisible,
+    isWindowFocused,
+    isContextAvailable,
+  });
+
+  const restartSampling = useCallback(() => {
+    setSamplingGeneration((generation) => generation + 1);
   }, []);
 
-  const active =
-    gameState === "playing" &&
-    !isPaused &&
-    isLocked &&
-    countdown === null &&
-    isPageVisible &&
-    isWindowFocused &&
-    isContextAvailable;
+  const handleDecline = useCallback(
+    (api: PerformanceMonitorApi) => {
+      const currentGameState = useGameStore.getState();
+      const currentlyActive = shouldMonitorPerformance({
+        gameState: currentGameState.gameState,
+        isPaused: currentGameState.isPaused,
+        countdown: currentGameState.countdown,
+        isLocked: currentGameState.isLocked,
+        isPageVisible: document.visibilityState === "visible",
+        isWindowFocused: document.hasFocus(),
+        isContextAvailable: isContextAvailableRef.current,
+      });
+      const duration = useSettingsStore.getState().duration;
+      const activeTrainingTimeMs = Math.min(
+        duration * 1_000,
+        Math.max(0, (duration - timeLeftRef.current) * 1_000),
+      );
+      const context: PerformanceReportContext = {
+        theme: useThemeStore.getState().theme,
+        dpr: gl.getPixelRatio(),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        trainingDurationSeconds: duration,
+        activeTrainingTimeMs,
+      };
+      const result = gatePerformanceDecline({
+        active: currentlyActive,
+        gameSessionId,
+        reportedGameSessionId: reportedGameSessionIdRef.current,
+        sample: snapshotPerformanceApi(api),
+        context,
+      });
 
-  useEffect(() => {
-    flushReports(core.startGame());
-  }, [core, flushReports, gameSessionId]);
-
-  useEffect(() => {
-    flushReports(core.setActive(active));
-  }, [active, core, flushReports]);
+      reportedGameSessionIdRef.current = result.reportedGameSessionId;
+      if (result.report) {
+        capturePerformanceEvent(
+          result.report,
+          developmentCapturesRef.current,
+        );
+      }
+    },
+    [gameSessionId, gl, timeLeftRef],
+  );
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -188,23 +288,48 @@ export function FramePerformanceMonitor({
     };
     const handleFocus = () => setIsWindowFocused(true);
     const handleBlur = () => setIsWindowFocused(false);
-    const handleResize = () => core.restartWindow();
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
     window.addEventListener("blur", handleBlur);
-    window.addEventListener("resize", handleResize);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
-      window.removeEventListener("resize", handleResize);
     };
-  }, [core]);
+  }, []);
 
   useEffect(() => {
-    const handleContextLost = () => setIsContextAvailable(false);
-    const handleContextRestored = () => setIsContextAvailable(true);
+    window.addEventListener("resize", restartSampling);
+    return () => window.removeEventListener("resize", restartSampling);
+  }, [restartSampling]);
+
+  useEffect(() => {
+    let query = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
+    );
+    const handleDprChange = () => {
+      query.removeEventListener("change", handleDprChange);
+      restartSampling();
+      query = window.matchMedia(
+        `(resolution: ${window.devicePixelRatio}dppx)`,
+      );
+      query.addEventListener("change", handleDprChange);
+    };
+
+    query.addEventListener("change", handleDprChange);
+    return () => query.removeEventListener("change", handleDprChange);
+  }, [restartSampling]);
+
+  useEffect(() => {
+    const handleContextLost = () => {
+      isContextAvailableRef.current = false;
+      setIsContextAvailable(false);
+    };
+    const handleContextRestored = () => {
+      isContextAvailableRef.current = true;
+      setIsContextAvailable(true);
+    };
     canvas.addEventListener("webglcontextlost", handleContextLost);
     canvas.addEventListener("webglcontextrestored", handleContextRestored);
     return () => {
@@ -214,42 +339,42 @@ export function FramePerformanceMonitor({
   }, [canvas]);
 
   useEffect(() => {
-    if (
-      typeof PerformanceObserver === "undefined" ||
-      !PerformanceObserver.supportedEntryTypes?.includes("longtask")
-    ) {
-      return;
-    }
-
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        core.recordLongTask(entry.duration);
-      }
-    });
-    observer.observe({ entryTypes: ["longtask"] });
-    return () => observer.disconnect();
-  }, [core]);
+    runtimeStateRef.current = {
+      active,
+      gameSessionId,
+      samplingGeneration,
+    };
+  }, [active, gameSessionId, samplingGeneration]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const testWindow = window as typeof window & {
-      __shootbang_performance_test?: ReturnType<typeof createDevelopmentTestApi>;
+      __shootbang_performance_test?: ReturnType<
+        typeof createDevelopmentTestApi
+      >;
     };
-    testWindow.__shootbang_performance_test = createDevelopmentTestApi();
+    const api = createDevelopmentTestApi(
+      developmentCapturesRef.current,
+      () => runtimeStateRef.current,
+    );
+    testWindow.__shootbang_performance_test = api;
     return () => {
-      delete testWindow.__shootbang_performance_test;
+      if (testWindow.__shootbang_performance_test === api) {
+        delete testWindow.__shootbang_performance_test;
+      }
     };
   }, []);
 
-  useFrame((_, delta) => {
-    if (lastDprRef.current !== window.devicePixelRatio) {
-      lastDprRef.current = window.devicePixelRatio;
-      core.restartWindow();
-      return;
-    }
-    const result = core.recordFrame(delta * 1_000, getReportContext());
-    if (result?.report) addPerformanceBreadcrumb(result.report);
-  });
+  if (!active) return null;
 
-  return null;
+  return (
+    <PerformanceMonitor
+      key={`${gameSessionId}:${samplingGeneration}`}
+      ms={PERFORMANCE_MONITOR_CONFIG.ms}
+      iterations={PERFORMANCE_MONITOR_CONFIG.iterations}
+      threshold={PERFORMANCE_MONITOR_CONFIG.threshold}
+      bounds={getPerformanceBounds}
+      onDecline={handleDecline}
+    />
+  );
 }

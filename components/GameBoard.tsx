@@ -183,6 +183,7 @@ export default function GameBoard() {
         gameState={game.gameState}
         theme={theme}
         gameSessionId={game.gameSessionId}
+        timeLeftRef={game.timeLeftRef}
       />
     </div>
   );
