@@ -69,6 +69,8 @@ test.describe("反馈服务逻辑", () => {
       idempotencyKey: `feedback/${VALID_REQUEST.submissionId}`,
     });
     expect(sent[0].text).toContain(VALID_REQUEST.content);
+    expect(sent[0].text.startsWith(VALID_REQUEST.content)).toBe(true);
+    expect(sent[0].text).toContain("----------------------------------------");
     expect(sent[0].text).toContain("Page: /");
     expect(sent[0].text).toContain("Browser: Test Browser");
     expect(sent[0].text).toContain("Release: commit-sha");
@@ -182,6 +184,69 @@ async function waitForGame(page: Page) {
 }
 
 test.describe("反馈 Dialog", () => {
+  test("Textarea 使用统一滚动条样式并保留原生滚动行为", async ({ page }) => {
+    await installTurnstileMock(page);
+    await waitForGame(page);
+    await page.getByRole("button", { name: "反馈" }).click();
+
+    const textarea = page.getByRole("textbox", { name: "反馈内容" });
+    const lines = Array.from(
+      { length: 40 },
+      (_, index) => `Feedback line ${index + 1}`,
+    ).join("\n");
+    await textarea.fill(lines);
+
+    const styles = await textarea.evaluate((element) => {
+      const scrollbar = getComputedStyle(element, "::-webkit-scrollbar");
+      const button = getComputedStyle(element, "::-webkit-scrollbar-button");
+      const track = getComputedStyle(element, "::-webkit-scrollbar-track");
+      const thumb = getComputedStyle(element, "::-webkit-scrollbar-thumb");
+
+      element.scrollTop = element.scrollHeight;
+
+      return {
+        buttonDisplay: button.display,
+        marginBottom: track.marginBottom,
+        marginTop: track.marginTop,
+        scrollbarCursor: scrollbar.cursor,
+        scrollbarWidth: scrollbar.width,
+        scrollTop: element.scrollTop,
+        thumbBackground: thumb.backgroundColor,
+        thumbBackgroundClip: thumb.backgroundClip,
+        thumbBorderLeft: thumb.borderLeftWidth,
+        thumbBorderRight: thumb.borderRightWidth,
+        thumbCursor: thumb.cursor,
+        thumbRadius: Number.parseFloat(thumb.borderRadius),
+        trackCursor: track.cursor,
+      };
+    });
+
+    expect(styles.scrollbarWidth).toBe("12px");
+    expect(styles.thumbBorderLeft).toBe("2px");
+    expect(styles.thumbBorderRight).toBe("2px");
+    expect(styles.thumbBackgroundClip).toBe("content-box");
+    expect(styles.buttonDisplay).toBe("none");
+    expect(styles.marginTop).toBe("4px");
+    expect(styles.marginBottom).toBe("4px");
+    expect(styles.scrollbarCursor).toBe("default");
+    expect(styles.trackCursor).toBe("default");
+    expect(styles.thumbCursor).toBe("default");
+    expect(styles.thumbRadius).toBeGreaterThan(0);
+    expect(styles.thumbBackground).not.toBe("rgba(0, 0, 0, 0)");
+    expect(styles.scrollTop).toBeGreaterThan(0);
+
+    await textarea.press("Control+Home");
+    await textarea.press("Shift+ArrowRight");
+    await expect
+      .poll(() =>
+        textarea.evaluate((element) => ({
+          end: (element as HTMLTextAreaElement).selectionEnd,
+          start: (element as HTMLTextAreaElement).selectionStart,
+        })),
+      )
+      .toEqual({ start: 0, end: 1 });
+  });
+
   test("开始页提交成功并防止双击重复请求", async ({ page }) => {
     await installTurnstileMock(page);
     let requestCount = 0;

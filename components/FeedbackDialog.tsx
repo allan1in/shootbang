@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   TurnstileWidget,
@@ -189,12 +188,12 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         </DialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="feedback-content">反馈内容</Label>
           <Textarea
             id="feedback-content"
+            aria-label="反馈内容"
+            className="h-52 min-h-52 resize-none"
             value={content}
             maxLength={MAX_FEEDBACK_LENGTH}
-            rows={7}
             disabled={submitting}
             placeholder="请描述你遇到的问题或建议"
             onChange={handleContentChange}
@@ -205,11 +204,13 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         </div>
 
         {open && (
-          <TurnstileWidget
-            ref={turnstileRef}
-            siteKey={TURNSTILE_SITE_KEY}
-            onStatusChange={setTurnstileStatus}
-          />
+          <div className="absolute inset-x-5 bottom-20 z-10">
+            <TurnstileWidget
+              ref={turnstileRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onStatusChange={setTurnstileStatus}
+            />
+          </div>
         )}
 
         <DialogFooter className="grid grid-cols-2">

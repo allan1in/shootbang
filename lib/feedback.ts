@@ -145,12 +145,9 @@ export function createFeedbackEmail(
     subject: `Shootbang User Feedback [${environment}]`,
     idempotencyKey: `feedback/${request.submissionId}`,
     text: [
-      "Shootbang User Feedback",
-      "",
-      "Feedback:",
       request.content,
       "",
-      "---",
+      "----------------------------------------",
       `Submitted at: ${context.now.toISOString()}`,
       `Page: ${request.page}`,
       `Browser: ${userAgent}`,
