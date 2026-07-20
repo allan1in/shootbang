@@ -65,13 +65,13 @@ test.describe("反馈服务逻辑", () => {
     expect(sent[0]).toMatchObject({
       from: VALID_CONTEXT.from,
       to: VALID_CONTEXT.to,
-      subject: "Shootbang 用户反馈 [preview]",
+      subject: "Shootbang User Feedback [preview]",
       idempotencyKey: `feedback/${VALID_REQUEST.submissionId}`,
     });
     expect(sent[0].text).toContain(VALID_REQUEST.content);
-    expect(sent[0].text).toContain("页面：/");
-    expect(sent[0].text).toContain("浏览器：Test Browser");
-    expect(sent[0].text).toContain("Release：commit-sha");
+    expect(sent[0].text).toContain("Page: /");
+    expect(sent[0].text).toContain("Browser: Test Browser");
+    expect(sent[0].text).toContain("Release: commit-sha");
     expect(sent[0].text).not.toContain(VALID_REQUEST.turnstileToken);
     expect(sent[0].text).not.toContain("IP");
   });
@@ -131,9 +131,9 @@ test.describe("反馈服务逻辑", () => {
       release: "sha\r\nInjected",
       userAgent: "Browser\nInjected",
     });
-    expect(email.subject).toBe("Shootbang 用户反馈 [preview Injected]");
-    expect(email.text).toContain("Release：sha Injected");
-    expect(email.text).toContain("浏览器：Browser Injected");
+    expect(email.subject).toBe("Shootbang User Feedback [preview Injected]");
+    expect(email.text).toContain("Release: sha Injected");
+    expect(email.text).toContain("Browser: Browser Injected");
   });
 });
 
@@ -263,12 +263,15 @@ test.describe("反馈 Dialog", () => {
     await page.getByRole("button", { name: "发送" }).click();
     await expect.poll(() => submissionIds.length).toBe(2);
     expect(submissionIds[1]).toBe(submissionIds[0]);
-    const resetCount = await page.evaluate(
-      () =>
-        (window as typeof window & { __turnstileResetCount?: number })
-          .__turnstileResetCount,
-    );
-    expect(resetCount).toBe(2);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { __turnstileResetCount?: number })
+              .__turnstileResetCount,
+        ),
+      )
+      .toBe(2);
   });
 
   test("取消、Esc、叉号丢弃草稿，遮罩点击不关闭", async ({ page }) => {

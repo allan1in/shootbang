@@ -142,20 +142,20 @@ export function createFeedbackEmail(
   return {
     from: context.from,
     to: context.to,
-    subject: `Shootbang 用户反馈 [${environment}]`,
+    subject: `Shootbang User Feedback [${environment}]`,
     idempotencyKey: `feedback/${request.submissionId}`,
     text: [
-      "Shootbang 用户反馈",
+      "Shootbang User Feedback",
       "",
-      "反馈内容：",
+      "Feedback:",
       request.content,
       "",
       "---",
-      `提交时间：${context.now.toISOString()}`,
-      `页面：${request.page}`,
-      `浏览器：${userAgent}`,
-      `Release：${release}`,
-      `Environment：${environment}`,
+      `Submitted at: ${context.now.toISOString()}`,
+      `Page: ${request.page}`,
+      `Browser: ${userAgent}`,
+      `Release: ${release}`,
+      `Environment: ${environment}`,
     ].join("\n"),
   };
 }
