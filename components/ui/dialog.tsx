@@ -35,7 +35,7 @@ function DialogContent({
         >
           {children}
           <DialogPrimitive.Close
-            aria-label="关闭设置"
+            aria-label="关闭对话框"
             className="absolute top-4 right-4 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <XIcon className="size-4" />

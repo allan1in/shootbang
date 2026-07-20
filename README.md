@@ -56,6 +56,19 @@ pnpm dev
 
 Vercel Preview 与 Production 会根据 `VERCEL_ENV` 自动区分环境，Release 使用对应的 Git Commit SHA。当前仅启用错误监控，不启用 Replay、Tracing、Profiling、Logs 或 User Feedback。
 
+### 反馈邮件配置
+
+反馈表单使用 Cloudflare Turnstile 完成人机验证，并通过 Resend 从服务端发送邮件。复制 `.env.example` 为 `.env.local` 后配置以下变量：
+
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`：Turnstile Widget 的公开 Site Key，会在构建时进入浏览器代码。
+- `TURNSTILE_SECRET_KEY`：Turnstile 服务端 Secret Key。
+- `FEEDBACK_ALLOWED_HOSTNAMES`：Siteverify 允许的 hostname，多个值用英文逗号分隔；包含正式域名和稳定的 Vercel Preview 分支别名。
+- `RESEND_API_KEY`：Resend API Key。
+- `FEEDBACK_FROM_EMAIL`：使用 Resend 已验证域名的发件地址。
+- `FEEDBACK_TO_EMAIL`：接收反馈的邮箱。
+
+本地开发和自动化测试可使用 Cloudflare 官方测试密钥；不要将测试密钥配置到 Production。Preview 和 Production 应在 Vercel 中分别设置真实环境变量，并把对应的稳定 hostname 加入 Turnstile Widget。
+
 ### 其他命令
 
 ```bash
