@@ -35,22 +35,35 @@ FPS 热身瞄准训练工具，帮助玩家在对局前快速进入状态。
 
 ```bash
 # 安装依赖
-npm install
+pnpm install
 
 # 启动开发服务器
-npm run dev
+pnpm dev
 ```
 
 浏览器打开 [http://localhost:3000](http://localhost:3000) 即可体验。
 
+### Sentry 错误监控
+
+本地开发默认不向 Sentry 发送事件。部署环境需要配置：
+
+| 环境变量 | 用途 |
+|------|------|
+| `NEXT_PUBLIC_SENTRY_DSN` | 客户端、服务端与 Edge Runtime 的事件接收地址 |
+| `SENTRY_ORG` | Sentry Organization slug |
+| `SENTRY_PROJECT` | Sentry Project slug |
+| `SENTRY_AUTH_TOKEN` | 构建时上传 Source Maps，仅配置在 Vercel 服务端 |
+
+Vercel Preview 与 Production 会根据 `VERCEL_ENV` 自动区分环境，Release 使用对应的 Git Commit SHA。当前仅启用错误监控，不启用 Replay、Tracing、Profiling、Logs 或 User Feedback。
+
 ### 其他命令
 
 ```bash
-npm run build    # 生产构建
-npm run start    # 启动生产服务器
-npm run lint     # ESLint 检查
-npm run test     # Playwright E2E 测试
-npm run check    # 完整检查（类型检查 + Lint + 测试）
+pnpm build    # 生产构建
+pnpm start    # 启动生产服务器
+pnpm lint     # ESLint 检查
+pnpm test     # Playwright E2E 测试
+pnpm check    # 完整检查（类型检查 + Lint + 测试）
 ```
 
 ## 项目结构
@@ -88,8 +101,8 @@ tests/
 项目使用 Playwright 进行端到端测试，覆盖完整游戏流程：
 
 ```bash
-npm run test          # 运行全部测试
-npx playwright test -g "用例名称"  # 运行单个测试
+pnpm test              # 运行全部测试
+pnpm exec playwright test -g "用例名称"  # 运行单个测试
 ```
 
 ### 测试辅助 API

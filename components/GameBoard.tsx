@@ -182,6 +182,8 @@ export default function GameBoard() {
         sceneProvider={bridge.SceneProvider}
         gameState={game.gameState}
         theme={theme}
+        gameSessionId={game.gameSessionId}
+        timeLeftRef={game.timeLeftRef}
       />
     </div>
   );
