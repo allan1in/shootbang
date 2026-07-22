@@ -32,6 +32,7 @@ export default function RootLayout({
     >
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="baidu-site-verification" content="codeva-9qKEPHXjAR" />
       </head>
       <body className="min-h-full flex flex-col">
         <ErrorBoundary>
