@@ -201,6 +201,7 @@ test.describe("反馈 Dialog", () => {
       const button = getComputedStyle(element, "::-webkit-scrollbar-button");
       const track = getComputedStyle(element, "::-webkit-scrollbar-track");
       const thumb = getComputedStyle(element, "::-webkit-scrollbar-thumb");
+      const textareaStyle = getComputedStyle(element);
 
       element.scrollTop = element.scrollHeight;
 
@@ -208,6 +209,8 @@ test.describe("反馈 Dialog", () => {
         buttonDisplay: button.display,
         marginBottom: track.marginBottom,
         marginTop: track.marginTop,
+        resize: textareaStyle.resize,
+        rows: (element as HTMLTextAreaElement).rows,
         scrollbarCursor: scrollbar.cursor,
         scrollbarWidth: scrollbar.width,
         scrollTop: element.scrollTop,
@@ -228,6 +231,8 @@ test.describe("反馈 Dialog", () => {
     expect(styles.buttonDisplay).toBe("none");
     expect(styles.marginTop).toBe("4px");
     expect(styles.marginBottom).toBe("4px");
+    expect(styles.resize).toBe("none");
+    expect(styles.rows).toBe(7);
     expect(styles.scrollbarCursor).toBe("default");
     expect(styles.trackCursor).toBe("default");
     expect(styles.thumbCursor).toBe("default");
@@ -242,6 +247,28 @@ test.describe("反馈 Dialog", () => {
       input.focus();
     });
     await textarea.press("Enter");
+    await expect
+      .poll(() =>
+        textarea.evaluate(
+          (element) =>
+            element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+
+    const pastedText = "\nPasted line 1\nPasted line 2\nPasted line 3";
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.evaluate(
+      (text) => navigator.clipboard.writeText(text),
+      pastedText,
+    );
+    await textarea.evaluate((element) => {
+      const input = element as HTMLTextAreaElement;
+      input.scrollTop = 0;
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.focus();
+    });
+    await textarea.press("Control+V");
     await expect
       .poll(() =>
         textarea.evaluate(
