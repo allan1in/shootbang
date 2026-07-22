@@ -61,6 +61,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [turnstileStatus, setTurnstileStatus] =
     useState<TurnstileStatus>("loading");
+  const [turnstileInteractive, setTurnstileInteractive] = useState(false);
   const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const attemptRef = useRef<SubmissionAttempt | null>(null);
   const requestRef = useRef<AbortController | null>(null);
@@ -79,6 +80,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     setContent("");
     setSubmitting(false);
     setTurnstileStatus("loading");
+    setTurnstileInteractive(false);
   }, []);
 
   const closeDialog = useCallback(() => {
@@ -203,32 +205,43 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          <Textarea
-            id="feedback-content"
-            aria-label="反馈内容"
-            className="resize-none"
-            value={content}
-            maxLength={MAX_FEEDBACK_LENGTH}
-            rows={7}
-            disabled={submitting}
-            placeholder="请描述你遇到的问题或建议"
-            onChange={handleContentChange}
-          />
-          <div className="text-right text-xs tabular-nums text-muted-foreground">
-            {content.length} / {MAX_FEEDBACK_LENGTH}
-          </div>
-        </div>
-
-        {open && (
-          <div className="absolute inset-x-5 bottom-20 z-10">
-            <TurnstileWidget
-              ref={turnstileRef}
-              siteKey={TURNSTILE_SITE_KEY}
-              onStatusChange={setTurnstileStatus}
+        <div className="grid">
+          <div className="space-y-2">
+            <Textarea
+              id="feedback-content"
+              aria-label="反馈内容"
+              className="resize-none"
+              value={content}
+              maxLength={MAX_FEEDBACK_LENGTH}
+              rows={7}
+              disabled={submitting}
+              placeholder="请描述你遇到的问题或建议"
+              onChange={handleContentChange}
             />
+            <div className="text-right text-xs tabular-nums text-muted-foreground">
+              {content.length} / {MAX_FEEDBACK_LENGTH}
+            </div>
           </div>
-        )}
+
+          {open && (
+            <div
+              data-testid="feedback-turnstile-slot"
+              aria-hidden={!turnstileInteractive}
+              className={`overflow-hidden transition-[height,margin,opacity] duration-200 ${
+                turnstileInteractive
+                  ? "visible mt-2 h-[65px] opacity-100"
+                  : "invisible h-0 opacity-0"
+              }`}
+            >
+              <TurnstileWidget
+                ref={turnstileRef}
+                siteKey={TURNSTILE_SITE_KEY}
+                onStatusChange={setTurnstileStatus}
+                onInteractiveChange={setTurnstileInteractive}
+              />
+            </div>
+          )}
+        </div>
 
         <DialogFooter className="grid grid-cols-2">
           <Button

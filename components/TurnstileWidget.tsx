@@ -24,6 +24,8 @@ interface TurnstileRenderOptions {
   "error-callback": (code?: string) => void;
   "expired-callback": () => void;
   "timeout-callback": () => void;
+  "before-interactive-callback": () => void;
+  "after-interactive-callback": () => void;
 }
 
 interface TurnstileApi {
@@ -52,6 +54,7 @@ export interface TurnstileWidgetHandle {
 interface TurnstileWidgetProps {
   siteKey?: string;
   onStatusChange: (status: TurnstileStatus) => void;
+  onInteractiveChange: (interactive: boolean) => void;
 }
 
 interface PendingChallenge {
@@ -68,7 +71,10 @@ function challengeError(message: string, name = "TurnstileError") {
 export const TurnstileWidget = forwardRef<
   TurnstileWidgetHandle,
   TurnstileWidgetProps
->(function TurnstileWidget({ siteKey, onStatusChange }, ref) {
+>(function TurnstileWidget(
+  { siteKey, onStatusChange, onInteractiveChange },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<TurnstileWidgetId | null>(null);
   const pendingRef = useRef<PendingChallenge | null>(null);
@@ -80,10 +86,11 @@ export const TurnstileWidget = forwardRef<
   }, []);
 
   const reset = useCallback(() => {
+    onInteractiveChange(false);
     const turnstile = window.turnstile;
     const widgetId = widgetIdRef.current;
     if (turnstile && widgetId) turnstile.reset(widgetId);
-  }, []);
+  }, [onInteractiveChange]);
 
   const renderWidget = useCallback(() => {
     if (!siteKey || !containerRef.current || !window.turnstile) {
@@ -103,11 +110,13 @@ export const TurnstileWidget = forwardRef<
       size: "flexible",
       callback: (token) => {
         if (!mountedRef.current) return;
+        onInteractiveChange(false);
         pendingRef.current?.resolve(token);
         pendingRef.current = null;
       },
       "error-callback": (code) => {
         if (!mountedRef.current) return;
+        onInteractiveChange(false);
         rejectPending(
           challengeError(
             code ? `Turnstile verification failed: ${code}` : "Turnstile verification failed",
@@ -116,15 +125,25 @@ export const TurnstileWidget = forwardRef<
       },
       "expired-callback": () => {
         if (!mountedRef.current) return;
+        onInteractiveChange(false);
         rejectPending(challengeError("Turnstile token expired"));
       },
       "timeout-callback": () => {
         if (!mountedRef.current) return;
+        onInteractiveChange(false);
         rejectPending(challengeError("Turnstile verification timed out"));
+      },
+      "before-interactive-callback": () => {
+        if (!mountedRef.current) return;
+        onInteractiveChange(true);
+      },
+      "after-interactive-callback": () => {
+        if (!mountedRef.current) return;
+        onInteractiveChange(false);
       },
     });
     onStatusChange("ready");
-  }, [onStatusChange, rejectPending, siteKey]);
+  }, [onInteractiveChange, onStatusChange, rejectPending, siteKey]);
 
   useImperativeHandle(
     ref,

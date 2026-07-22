@@ -170,6 +170,12 @@ async function installTurnstileMock(
               reset() { window.__turnstileResetCount += 1; },
               remove() {},
             };
+            window.__turnstileEnterInteractive = () => {
+              options["before-interactive-callback"]();
+            };
+            window.__turnstileLeaveInteractive = () => {
+              options["after-interactive-callback"]();
+            };
           })();
         `,
       });
@@ -298,6 +304,91 @@ test.describe("反馈 Dialog", () => {
         })),
       )
       .toEqual({ start: 0, end: 1 });
+  });
+
+  test("Turnstile 仅在交互时占据表单布局空间", async ({ page }) => {
+    await installTurnstileMock(page);
+    await waitForGame(page);
+    await page.getByRole("button", { name: "反馈" }).click();
+
+    const slot = page.getByTestId("feedback-turnstile-slot");
+    await page.waitForFunction(
+      () =>
+        typeof (
+          window as Window & {
+            __turnstileEnterInteractive?: () => void;
+          }
+        ).__turnstileEnterInteractive === "function",
+    );
+
+    await expect(slot).toHaveAttribute("aria-hidden", "true");
+    await expect
+      .poll(() =>
+        slot.evaluate((element) => ({
+          height: Number.parseFloat(getComputedStyle(element).height),
+          marginTop: Number.parseFloat(getComputedStyle(element).marginTop),
+          visibility: getComputedStyle(element).visibility,
+        })),
+      )
+      .toEqual({ height: 0, marginTop: 0, visibility: "hidden" });
+
+    await page.evaluate(() => {
+      const trigger = (
+        window as Window & {
+          __turnstileEnterInteractive?: () => void;
+        }
+      ).__turnstileEnterInteractive;
+      if (!trigger) throw new Error("Turnstile interactive callback unavailable");
+      trigger();
+    });
+
+    await expect(slot).toHaveAttribute("aria-hidden", "false");
+    await expect
+      .poll(() =>
+        slot.evaluate((element) =>
+          Number.parseFloat(getComputedStyle(element).height),
+        ),
+      )
+      .toBe(65);
+
+    const layout = await page.evaluate(() => {
+      const textarea = document.querySelector("textarea");
+      const slotElement = document.querySelector(
+        '[data-testid="feedback-turnstile-slot"]',
+      );
+      const footer = document.querySelector('[data-slot="dialog-footer"]');
+      if (!textarea || !slotElement || !footer) return null;
+
+      const textareaRect = textarea.getBoundingClientRect();
+      const slotRect = slotElement.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      return {
+        slotAfterTextarea: slotRect.top >= textareaRect.bottom,
+        footerAfterSlot: footerRect.top >= slotRect.bottom,
+      };
+    });
+    expect(layout).toEqual({
+      slotAfterTextarea: true,
+      footerAfterSlot: true,
+    });
+
+    await page.evaluate(() => {
+      const trigger = (
+        window as Window & {
+          __turnstileLeaveInteractive?: () => void;
+        }
+      ).__turnstileLeaveInteractive;
+      if (!trigger) throw new Error("Turnstile interactive callback unavailable");
+      trigger();
+    });
+    await expect(slot).toHaveAttribute("aria-hidden", "true");
+    await expect
+      .poll(() =>
+        slot.evaluate((element) =>
+          Number.parseFloat(getComputedStyle(element).height),
+        ),
+      )
+      .toBe(0);
   });
 
   test("开始页提交成功并防止双击重复请求", async ({ page }) => {
