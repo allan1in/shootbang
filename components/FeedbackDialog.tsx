@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -62,6 +68,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [turnstileStatus, setTurnstileStatus] =
     useState<TurnstileStatus>("loading");
   const turnstileRef = useRef<TurnstileWidgetHandle>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollAfterTrailingLineBreakRef = useRef(false);
   const attemptRef = useRef<SubmissionAttempt | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const openRef = useRef(open);
@@ -71,8 +79,19 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     openRef.current = open;
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!scrollAfterTrailingLineBreakRef.current) return;
+
+    scrollAfterTrailingLineBreakRef.current = false;
+    const textarea = textareaRef.current;
+    if (!textarea || textarea.selectionEnd !== textarea.value.length) return;
+
+    textarea.scrollTop = textarea.scrollHeight;
+  }, [content]);
+
   const resetDraft = useCallback(() => {
     generationRef.current += 1;
+    scrollAfterTrailingLineBreakRef.current = false;
     requestRef.current?.abort();
     requestRef.current = null;
     attemptRef.current = null;
@@ -90,6 +109,11 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const handleContentChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const nextContent = event.target.value;
+      const inputType = (event.nativeEvent as InputEvent).inputType;
+      scrollAfterTrailingLineBreakRef.current =
+        (inputType === "insertLineBreak" || inputType === "insertParagraph") &&
+        event.target.selectionStart === nextContent.length &&
+        event.target.selectionEnd === nextContent.length;
       setContent(nextContent);
       if (attemptRef.current?.content !== nextContent.trim()) {
         attemptRef.current = null;
@@ -189,6 +213,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
 
         <div className="space-y-2">
           <Textarea
+            ref={textareaRef}
             id="feedback-content"
             aria-label="反馈内容"
             className="h-52 min-h-52 resize-none"

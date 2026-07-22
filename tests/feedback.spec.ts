@@ -235,6 +235,32 @@ test.describe("反馈 Dialog", () => {
     expect(styles.thumbBackground).not.toBe("rgba(0, 0, 0, 0)");
     expect(styles.scrollTop).toBeGreaterThan(0);
 
+    await textarea.evaluate((element) => {
+      const input = element as HTMLTextAreaElement;
+      input.scrollTop = 0;
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.focus();
+    });
+    await textarea.press("Enter");
+    await expect
+      .poll(() =>
+        textarea.evaluate(
+          (element) =>
+            element.scrollHeight - element.clientHeight - element.scrollTop,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+
+    await textarea.press("Control+Home");
+    await textarea.press("Enter");
+    const leadingLineBreakScroll = await textarea.evaluate((element) => ({
+      maxScrollTop: element.scrollHeight - element.clientHeight,
+      scrollTop: element.scrollTop,
+    }));
+    expect(leadingLineBreakScroll.scrollTop).toBeLessThan(
+      leadingLineBreakScroll.maxScrollTop / 2,
+    );
+
     await textarea.press("Control+Home");
     await textarea.press("Shift+ArrowRight");
     await expect
