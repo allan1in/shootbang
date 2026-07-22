@@ -10,6 +10,7 @@ import { FinishedOverlay } from "@/components/FinishedOverlay";
 import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { FeedbackDialog } from "@/components/FeedbackDialog";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -20,6 +21,7 @@ import { toast } from "sonner";
 import { setMasterVolume } from "@/lib/sounds";
 
 export default function GameBoard() {
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const settings = useSettings();
   const {
     openSettings: openTrainingSettings,
@@ -122,6 +124,7 @@ export default function GameBoard() {
           onHome={handlePauseHome}
           onRestart={handlePauseRestart}
           onResume={triggerResume}
+          onOpenFeedback={() => setFeedbackOpen(true)}
         />
       )}
 
@@ -130,6 +133,7 @@ export default function GameBoard() {
         <IdleScreen
           onStart={triggerStart}
           onOpenSettings={openSettings}
+          onOpenFeedback={() => setFeedbackOpen(true)}
         />
       )}
 
@@ -159,8 +163,11 @@ export default function GameBoard() {
           stats={game.gameStats}
           onRestart={triggerStart}
           onHome={handleFinishedHome}
+          onOpenFeedback={() => setFeedbackOpen(true)}
         />
       )}
+
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
 
       {/* 倒计时 */}
       {game.countdown !== null && (

@@ -10,11 +10,16 @@ function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>)
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
+type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Popup> & {
+  closeDisabled?: boolean
+}
+
 function DialogContent({
   className,
   children,
+  closeDisabled = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Popup>) {
+}: DialogContentProps) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop
@@ -35,8 +40,9 @@ function DialogContent({
         >
           {children}
           <DialogPrimitive.Close
-            aria-label="关闭设置"
-            className="absolute top-4 right-4 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-label="关闭对话框"
+            disabled={closeDisabled}
+            className="absolute top-4 right-4 cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40"
           >
             <XIcon className="size-4" />
           </DialogPrimitive.Close>
