@@ -427,6 +427,15 @@ test.describe("反馈 Dialog", () => {
       .last();
     await sendButton.click();
     await expect(sendButton).toBeDisabled();
+    await expect.poll(() => requestCount).toBe(1);
+
+    const cancelButton = page.getByRole("button", { name: "取消" });
+    const closeButton = page.getByRole("button", { name: "关闭对话框" });
+    await expect(cancelButton).toBeDisabled();
+    await expect(closeButton).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+
     await sendButton.evaluate((button) => (button as HTMLElement).click());
     releaseResponse();
 
@@ -466,6 +475,9 @@ test.describe("反馈 Dialog", () => {
 
     await page.getByRole("button", { name: "发送" }).click();
     await expect(page.getByText("反馈发送失败，请稍后重试。")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "关闭对话框" }),
+    ).toBeEnabled();
     await expect(page.getByRole("textbox", { name: "反馈内容" })).toHaveValue(
       "发送失败测试",
     );

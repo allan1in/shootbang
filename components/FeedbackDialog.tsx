@@ -194,10 +194,13 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       open={open}
       disablePointerDismissal
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) closeDialog();
+        if (!nextOpen && !submitting) closeDialog();
       }}
     >
-      <DialogContent className="w-[22rem] max-w-[calc(100vw-2rem)] bg-card/60 backdrop-blur-xl">
+      <DialogContent
+        closeDisabled={submitting}
+        className="w-[22rem] max-w-[calc(100vw-2rem)] bg-card/60 backdrop-blur-xl"
+      >
         <DialogHeader>
           <DialogTitle>反馈</DialogTitle>
           <DialogDescription className="sr-only">
