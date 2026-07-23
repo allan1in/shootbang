@@ -15,10 +15,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteTitle = "Shootbang - FPS 热身训练";
+const siteDescription =
+  "Shootbang 是一款无需下载，打开浏览器即可使用的 FPS 热身训练工具。";
+
 export const metadata: Metadata = {
-  title: "Shootbang - FPS 热身训练",
-  description:
-    "Shootbang 是一款无需下载，打开浏览器即可使用的 FPS 热身训练工具。",
+  metadataBase: new URL("https://shootbang.allan1in.top"),
+  title: siteTitle,
+  description: siteDescription,
+  openGraph: {
+    title: siteTitle,
+    description: siteDescription,
+    url: "/",
+    siteName: "Shootbang",
+    locale: "zh_CN",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteTitle,
+    description: siteDescription,
+  },
 };
 
 export default function RootLayout({
