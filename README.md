@@ -1,130 +1,116 @@
-# ShootBang
+# Shootbang
 
-FPS 热身瞄准训练工具，帮助玩家在对局前快速进入状态。
+> Shootbang 是一款无需下载，打开浏览器即可使用的 FPS 热身训练工具。
 
-在浏览器中进入 3D 射击场，锁定鼠标，射击随机出现的目标球。游戏结束后查看命中率、命中数和平均反应时间，用数据量化你的瞄准水平。
+[立即体验 Shootbang](https://shootbang.allan1in.top)
 
-## 功能特性
+进入浏览器中的 3D 训练场，锁定鼠标后射击随机出现的目标，在正式对局前快速进入状态。训练结束后可以查看命中数、命中率和平均反应时间。
 
-- **Pointer Lock 射击** — 锁定鼠标后自由转动视角，左键射击，操作逻辑与主流 FPS 一致
-- **3D 射击场** — Three.js 渲染的封闭房间，3 个目标球在墙面网格上随机刷新
-- **可配置训练参数**
-  - 灵敏度：0.01 ~ 10.0
-  - 训练时长：15s / 30s / 60s / 120s
-  - 网格密度：3x3 ~ 6x6
-  - 目标大小：tiny / small / default / large / huge
-- **统计数据** — 命中率、命中数、平均反应时间，设置持久化到 localStorage
-- **音效反馈** — Web Audio API 合成音效（命中 / 未命中 / 倒计时）
-- **计时进度条** — 顶部丝滑动画进度条，`requestAnimationFrame` 驱动
-- **暂停 / 恢复** — 按 Esc 暂停，弹出菜单支持继续、重开、返回首页
-- **FPS 计数器** — 右下角实时显示帧率
-- **移动端检测** — 触屏或窄屏设备引导用户使用 PC 访问
+Shootbang 面向 PC 端设计，需要使用鼠标和键盘操作，暂不支持移动设备。
+
+## 功能
+
+- **FPS 操作方式**：通过 Pointer Lock 锁定鼠标，左键射击，优先请求原始鼠标输入并在不支持时静默兼容。
+- **3D 瞄准训练**：使用 React Three Fiber 和 Three.js 渲染训练场，3 个目标在墙面网格上随机刷新。
+- **训练设置**：支持调整灵敏度、训练时长、网格大小和目标大小。
+- **体验设置**：提供默认、雷雨和暴雪三种主题，以及可实时预览并保存的音量控制。
+- **训练统计**：记录命中数、命中率和有效训练时间内的平均反应时间。
+- **完整训练流程**：支持倒计时、暂停、恢复、重新开始和结算。
+- **性能监控**：使用 Drei `PerformanceMonitor` 检测持续性能下降，并通过 Sentry 上报最小诊断信息。
+- **用户反馈**：使用 Cloudflare Turnstile 完成人机验证，通过 Next.js 服务端和 Resend 将反馈发送到指定邮箱。
+- **移动端优化**：移动设备只加载访问提示，不下载 3D 场景和主题音频等游戏依赖。
 
 ## 技术栈
 
 | 分类 | 技术 |
-|------|------|
-| 框架 | Next.js 16 (App Router) + React 19 + TypeScript |
-| 3D 渲染 | Three.js |
-| UI 组件 | shadcn/ui (base-nova) + Lucide React |
-| 样式 | Tailwind CSS v4 + tw-animate-css |
-| 测试 | Playwright (24 个 E2E 用例) |
+|---|---|
+| 应用框架 | Next.js 16、React 19、TypeScript |
+| 3D 渲染 | React Three Fiber、Three.js、Drei |
+| 状态管理 | Zustand |
+| UI 与样式 | shadcn/ui、Base UI、Tailwind CSS v4、Lucide React |
+| 可观测性 | Sentry、Vercel Speed Insights |
+| 反馈服务 | Cloudflare Turnstile、Resend |
+| 测试 | Playwright、TypeScript、ESLint |
 | 部署 | Vercel |
 
-## 快速开始
+## 本地运行
+
+项目使用 `pnpm@10.28.1` 管理依赖。
 
 ```bash
-# 安装依赖
 pnpm install
-
-# 启动开发服务器
 pnpm dev
 ```
 
-浏览器打开 [http://localhost:3000](http://localhost:3000) 即可体验。
+打开 [http://localhost:3000](http://localhost:3000) 即可访问。
 
-### Sentry 错误监控
+游戏主体可以在不配置第三方服务的情况下运行；反馈发送和线上监控需要额外的环境变量。
 
-本地开发默认不向 Sentry 发送事件。部署环境需要配置：
+## 环境变量
 
-| 环境变量 | 用途 |
-|------|------|
-| `NEXT_PUBLIC_SENTRY_DSN` | 客户端、服务端与 Edge Runtime 的事件接收地址 |
-| `SENTRY_ORG` | Sentry Organization slug |
-| `SENTRY_PROJECT` | Sentry Project slug |
-| `SENTRY_AUTH_TOKEN` | 构建时上传 Source Maps，仅配置在 Vercel 服务端 |
+复制 `.env.example` 为 `.env.local`，并按需配置：
 
-Vercel Preview 与 Production 会根据 `VERCEL_ENV` 自动区分环境，Release 使用对应的 Git Commit SHA。当前仅启用错误监控，不启用 Replay、Tracing、Profiling、Logs 或 User Feedback。
+| 变量 | 用途 |
+|---|---|
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | 浏览器端 Turnstile Site Key |
+| `TURNSTILE_SECRET_KEY` | 服务端 Turnstile Secret Key |
+| `FEEDBACK_ALLOWED_HOSTNAMES` | 允许提交反馈的 hostname 列表 |
+| `RESEND_API_KEY` | Resend 服务端 API Key |
+| `FEEDBACK_FROM_EMAIL` | 已验证域名下的反馈发件地址 |
+| `FEEDBACK_TO_EMAIL` | 接收用户反馈的邮箱 |
 
-### 反馈邮件配置
+Sentry 的 DSN、组织、项目和 Source Map 上传凭据通过部署环境配置。密钥不得提交到仓库。
 
-反馈表单使用 Cloudflare Turnstile 完成人机验证，并通过 Resend 从服务端发送邮件。复制 `.env.example` 为 `.env.local` 后配置以下变量：
-
-- `NEXT_PUBLIC_TURNSTILE_SITE_KEY`：Turnstile Widget 的公开 Site Key，会在构建时进入浏览器代码。
-- `TURNSTILE_SECRET_KEY`：Turnstile 服务端 Secret Key。
-- `FEEDBACK_ALLOWED_HOSTNAMES`：Siteverify 允许的 hostname，多个值用英文逗号分隔；包含正式域名和稳定的 Vercel Preview 分支别名。
-- `RESEND_API_KEY`：Resend API Key。
-- `FEEDBACK_FROM_EMAIL`：使用 Resend 已验证域名的发件地址。
-- `FEEDBACK_TO_EMAIL`：接收反馈的邮箱。
-
-本地开发和自动化测试可使用 Cloudflare 官方测试密钥；不要将测试密钥配置到 Production。Preview 和 Production 应在 Vercel 中分别设置真实环境变量，并把对应的稳定 hostname 加入 Turnstile Widget。
-
-### 其他命令
+## 常用命令
 
 ```bash
-pnpm build    # 生产构建
+pnpm dev      # 启动开发服务器
+pnpm build    # 创建生产构建
 pnpm start    # 启动生产服务器
-pnpm lint     # ESLint 检查
-pnpm test     # Playwright E2E 测试
-pnpm check    # 完整检查（类型检查 + Lint + 测试）
+pnpm lint     # 运行 ESLint
+pnpm test     # 运行 Playwright 测试
+pnpm check    # 类型检查、ESLint 和完整 Playwright 测试
 ```
 
 ## 项目结构
 
-```
+```text
 app/
-  page.tsx                 # 入口页
-  layout.tsx               # 根布局（字体、暗色主题、ErrorBoundary）
-  globals.css              # 全局样式 + Tailwind 主题变量
+  api/feedback/             # 反馈提交接口
+  layout.tsx                # 全局 metadata、字体和服务组件
+  page.tsx                  # 页面入口
 components/
-  GameBoard.tsx            # 游戏主控组件
-  IdleScreen.tsx           # 开始界面 + 设置面板
-  TimerBar.tsx             # 顶部计时进度条
-  FpsCounter.tsx           # FPS 计数器
-  Crosshair.tsx            # 准心覆盖层
-  CountdownOverlay.tsx     # 3-2-1 倒计时
-  ResultStats.tsx          # 结算统计面板
-  PauseOverlay.tsx         # 暂停菜单
-  TargetSizeSettings.tsx   # 目标大小选择器
-  MobileGate.tsx           # 移动端检测网关
-  ui/                      # shadcn/ui 组件
+  GameBoard.tsx             # 游戏流程与界面编排
+  SettingsDialog.tsx        # 训练和体验设置
+  FeedbackDialog.tsx        # 用户反馈界面
+  r3f/                      # R3F 场景、主题特效与性能监控
+  ui/                       # shadcn 风格基础组件
 hooks/
-  useGameLogic.ts          # 游戏状态机、射击、计分、计时
-  useThreeScene.ts         # Three.js 场景初始化、3D 房间、目标池
-  useSettings.ts           # 设置管理（localStorage 持久化）
+  useGameLogic.ts           # 射击、计时、暂停和统计逻辑
+  useSettings.ts            # 设置草稿与保存流程
+  useTheme.ts               # 主题状态
 lib/
-  grid.ts                  # 网格位置生成、目标刷新逻辑
-  sounds.ts                # Web Audio API 音效
+  feedback.ts               # 反馈校验与邮件编排
+  performanceMonitoring.ts  # 性能报告与上报门控
+  grid.ts                   # 目标网格与刷新逻辑
+stores/
+  gameStore.ts              # 游戏、设置和主题状态
 tests/
-  game.spec.ts             # Playwright E2E 测试（24 个用例）
+  game.spec.ts              # 游戏流程测试
+  feedback.spec.ts          # 反馈流程测试
+  performance.spec.ts       # 性能监控测试
+docs/                       # 工程设计与实现记录
 ```
 
-## 测试
+## 工程文档
 
-项目使用 Playwright 进行端到端测试，覆盖完整游戏流程：
+- [首屏加载优化](docs/loading.md)
+- [掉帧检测与上报](docs/stutter.md)
+- [错误监控与反馈系统](docs/feedback.md)
+- [SEO 与搜索可发现性](docs/seo.md)
 
-```bash
-pnpm test              # 运行全部测试
-pnpm exec playwright test -g "用例名称"  # 运行单个测试
-```
+## 测试说明
 
-### 测试辅助 API
+Playwright 覆盖 Pointer Lock、倒计时、暂停恢复、有效训练计时、平均反应时间、设置持久化、性能监控和反馈提交等关键流程。
 
-开发环境下，GameBoard 通过 `window.__shootbang_test` 暴露测试接口：
-
-| 方法 | 说明 |
-|------|------|
-| `startGame()` | 直接启动游戏（跳过 Pointer Lock） |
-| `startCountdown()` | 启动倒计时 |
-| `setGameState(state)` | 设置游戏状态 (`"idle"` / `"playing"` / `"finished"`) |
-| `getGameState()` | 获取当前游戏状态 |
+开发环境会注册内部测试接口，供 Playwright 控制游戏状态和第三方服务模拟；生产构建不会暴露这些接口。
