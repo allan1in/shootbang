@@ -287,6 +287,8 @@ export const metadata: Metadata = {
 
 Description 可能用于搜索结果摘要，但搜索引擎会根据用户查询和页面内容决定是否采用，也可能自动改写。
 
+移动端只提供 PC 访问提示。该提示容器使用 Google 支持的 `data-nosnippet` 属性，避免“请使用 PC 端访问”等限制说明被选为搜索摘要。这个属性不会阻止页面抓取或索引，也不影响真实移动用户看到提示；Google 可以改用 metadata description 或页面中的其他内容生成摘要。
+
 这次优化的目标不是关键词堆砌，而是让品牌名和产品用途在一行内同时成立：
 
 ```text

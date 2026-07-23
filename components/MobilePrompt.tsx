@@ -3,7 +3,10 @@ import { Monitor } from "lucide-react";
 
 export const MobilePrompt = React.memo(function MobilePrompt() {
   return (
-    <div className="flex flex-col items-center justify-center h-dvh gap-4 px-6 text-center bg-background">
+    <div
+      data-nosnippet
+      className="flex flex-col items-center justify-center h-dvh gap-4 px-6 text-center bg-background"
+    >
       <Monitor className="w-16 h-16 text-muted-foreground" />
       <h1 className="text-2xl font-bold">请使用 PC 端访问</h1>
       <p className="text-muted-foreground max-w-sm">
