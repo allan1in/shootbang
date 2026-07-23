@@ -17,7 +17,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Shootbang - FPS 热身训练",
-  description: "无需下载，打开浏览器即可进行 FPS 热身",
+  description:
+    "Shootbang 是一款无需下载，打开浏览器即可使用的 FPS 热身训练工具。",
 };
 
 export default function RootLayout({
