@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -58,6 +59,7 @@ export default function RootLayout({
         </ErrorBoundary>
         <Toaster />
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
