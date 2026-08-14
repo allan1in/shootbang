@@ -758,6 +758,20 @@ test.describe("懒加载", () => {
     });
   });
 
+  test.describe("720p 桌面设备边界", () => {
+    test.use({ viewport: { width: 1280, height: 720 } });
+
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 1280, 720);
+    });
+
+    test("常见 720p 桌面屏幕仍加载游戏", async ({ page }) => {
+      await page.goto("/");
+      await waitForCanvas(page);
+      await expect(page.getByText("请使用 PC 端访问")).not.toBeVisible();
+    });
+  });
+
   test.describe("触屏笔记本边界", () => {
     test.use({
       hasTouch: true,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 
 const MOBILE_USER_AGENT_PATTERN = /Android|iPhone|iPad|iPod|Mobile/i;
-const SMALL_SCREEN_BREAKPOINT = 768;
+const SMALL_DEVICE_SHORT_EDGE_BREAKPOINT = 600;
 
 interface NavigatorWithUserAgentData extends Navigator {
   userAgentData?: {
@@ -22,7 +22,7 @@ function isUnsupportedMobileDevice() {
     navigator.userAgent.includes("Macintosh");
   const isSmallScreen =
     Math.min(window.screen.width, window.screen.height) <
-    SMALL_SCREEN_BREAKPOINT;
+    SMALL_DEVICE_SHORT_EDGE_BREAKPOINT;
 
   return hasMobileUserAgent || isIPadDesktopMode || isSmallScreen;
 }
