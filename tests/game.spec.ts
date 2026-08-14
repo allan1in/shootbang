@@ -68,6 +68,18 @@ async function waitForCanvas(page: Page) {
   await page.waitForTimeout(500);
 }
 
+async function mockScreenSize(page: Page, width: number, height: number) {
+  await page.addInitScript(
+    ({ screenWidth, screenHeight }) => {
+      Object.defineProperties(window.screen, {
+        width: { configurable: true, get: () => screenWidth },
+        height: { configurable: true, get: () => screenHeight },
+      });
+    },
+    { screenWidth: width, screenHeight: height }
+  );
+}
+
 type PointerLockMockMode = "raw" | "fallback" | "fail";
 
 async function mockPointerLock(page: Page, mode: PointerLockMockMode) {
@@ -684,11 +696,15 @@ test.describe("状态流转", () => {
 test.describe("移动端提示", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
+  test.beforeEach(async ({ page }) => {
+    await mockScreenSize(page, 375, 667);
+  });
+
   test("显示 PC 访问提示", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
     await expect(
-      page.getByText("本游戏需要鼠标和键盘操作，暂不支持移动设备。")
+      page.getByText("需要鼠标和键盘进行操作，暂不支持移动设备")
     ).toBeVisible();
   });
 
@@ -704,6 +720,10 @@ test.describe("懒加载", () => {
   test.describe("移动端", () => {
     test.use({ viewport: { width: 375, height: 667 } });
 
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 375, 667);
+    });
+
     test("不加载游戏模块", async ({ page }) => {
       await page.goto("/");
       await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
@@ -714,12 +734,76 @@ test.describe("懒加载", () => {
       expect(apiDefined).toBe(false);
     });
 
-    test("边界：窗口从移动尺寸变为桌面尺寸后按需加载游戏", async ({ page }) => {
+    test("窗口变宽后仍按设备屏幕保持拦截", async ({ page }) => {
       await page.goto("/");
       await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
 
       await page.setViewportSize({ width: 1280, height: 720 });
-      await expect(page.locator("canvas")).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+      await expect(page.locator("canvas")).not.toBeVisible();
+    });
+  });
+
+  test.describe("桌面设备边界", () => {
+    test.use({ viewport: { width: 375, height: 667 } });
+
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 1920, 1080);
+    });
+
+    test("桌面浏览器缩小窗口后仍加载游戏", async ({ page }) => {
+      await page.goto("/");
+      await waitForCanvas(page);
+      await expect(page.getByText("请使用 PC 端访问")).not.toBeVisible();
+    });
+  });
+
+  test.describe("720p 桌面设备边界", () => {
+    test.use({ viewport: { width: 1280, height: 720 } });
+
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 1280, 720);
+    });
+
+    test("常见 720p 桌面屏幕仍加载游戏", async ({ page }) => {
+      await page.goto("/");
+      await waitForCanvas(page);
+      await expect(page.getByText("请使用 PC 端访问")).not.toBeVisible();
+    });
+  });
+
+  test.describe("触屏笔记本边界", () => {
+    test.use({
+      hasTouch: true,
+      viewport: { width: 1280, height: 720 },
+    });
+
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 1920, 1080);
+    });
+
+    test("支持触摸但使用桌面 UA 时仍加载游戏", async ({ page }) => {
+      await page.goto("/");
+      await waitForCanvas(page);
+      await expect(page.getByText("请使用 PC 端访问")).not.toBeVisible();
+    });
+  });
+
+  test.describe("移动 UA 边界", () => {
+    test.use({
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
+      viewport: { width: 1280, height: 720 },
+    });
+
+    test.beforeEach(async ({ page }) => {
+      await mockScreenSize(page, 1920, 1080);
+    });
+
+    test("大屏幕下的移动 UA 仍被拦截", async ({ page }) => {
+      await page.goto("/");
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+      await expect(page.locator("canvas")).not.toBeVisible();
     });
   });
 
