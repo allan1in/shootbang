@@ -56,7 +56,7 @@ PORT=3001 npm run start
 npx lighthouse http://localhost:3001 --preset=desktop --output=json --output=html
 ```
 
-**本项目特有的坑**:Lighthouse 默认 mobile 模拟(小视口+触屏)会命中 `useMobileDetect` 的判定(`hasTouch || innerWidth < 768`),测到的是 `MobilePrompt` 提示语而非游戏本体。桌面数据必须显式 `--preset=desktop`。
+**本项目特有的坑**:Lighthouse 默认 mobile 模拟会命中 `useMobileDetect` 的移动 UA 或小设备屏幕判定，测到的是 `MobilePrompt` 提示语而非游戏本体。桌面数据必须显式 `--preset=desktop`。
 
 ### 基线结果(localhost, desktop)
 

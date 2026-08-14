@@ -334,7 +334,7 @@ Next.js 返回 HTML
 if (!ready) return null;
 ```
 
-`useMobileDetect` 必须在浏览器中读取 `window`、屏幕宽度和触摸能力；服务端不会执行 `useEffect`，因此首次渲染时 `ready` 必然为 `false`。
+`useMobileDetect` 必须在浏览器中读取移动端标识、设备屏幕尺寸和 iPad 桌面模式特征；服务端不会执行 `useEffect`，因此首次渲染时 `ready` 必然为 `false`。
 
 `GameBoard` 同时设置了 `ssr: false`，因为 Three.js、WebGL、Pointer Lock 和屏幕信息依赖浏览器环境。禁用游戏主体 SSR 是合理的，问题只是服务端没有提供任何有意义的替代内容。
 
