@@ -14,7 +14,13 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: "**/apple.spec.ts",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "apple-webkit",
+      testMatch: "**/apple.spec.ts",
+      use: { ...devices["Desktop Safari"] },
     },
   ],
   webServer: {
