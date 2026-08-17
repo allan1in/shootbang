@@ -20,7 +20,11 @@ import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
 import { setMasterVolume } from "@/lib/sounds";
 
-export default function GameBoard() {
+interface GameBoardProps {
+  onRendererReady?: () => void;
+}
+
+export default function GameBoard({ onRendererReady }: GameBoardProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const settings = useSettings();
   const {
@@ -101,8 +105,9 @@ export default function GameBoard() {
         toast.error("WebGL context 已恢复，如画面异常请刷新页面");
       canvas.addEventListener("webglcontextlost", onLost);
       canvas.addEventListener("webglcontextrestored", onRestored);
+      onRendererReady?.();
     },
-    [bridge.canvasRef],
+    [bridge.canvasRef, onRendererReady],
   );
 
   return (

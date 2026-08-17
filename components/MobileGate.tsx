@@ -1,20 +1,70 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useCallback, useEffect, useState } from "react";
 import { useMobileDetect } from "@/hooks/useMobileDetect";
+import { useWebGLSupport } from "@/hooks/useWebGLSupport";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MobilePrompt } from "@/components/MobilePrompt";
+import {
+  getRendererInitializationTimeoutMs,
+  reportWebGLStartupFailure,
+  shouldSuppressRendererReadyForTest,
+} from "@/lib/webglSupport";
 
 // 动态导入：移动端只渲染提示语，不下载 three.js/tone.js 等游戏依赖
 const GameBoard = dynamic(() => import("@/components/GameBoard"), {
   ssr: false,
-  loading: LoadingScreen,
+  loading: () => <LoadingScreen />,
 });
 
 export function MobileGate() {
   const { isMobile, ready } = useMobileDetect();
+  const webGLStatus = useWebGLSupport(ready && !isMobile);
+  const [rendererReady, setRendererReady] = useState(false);
+  const [rendererTimedOut, setRendererTimedOut] = useState(false);
+
+  const handleRendererReady = useCallback(() => {
+    if (shouldSuppressRendererReadyForTest()) return;
+    setRendererReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (webGLStatus !== "unsupported") return;
+    reportWebGLStartupFailure("webgl2-check");
+  }, [webGLStatus]);
+
+  useEffect(() => {
+    if (webGLStatus !== "supported" || rendererReady) return;
+
+    const timeoutId = window.setTimeout(() => {
+      reportWebGLStartupFailure("renderer-timeout");
+      setRendererTimedOut(true);
+    }, getRendererInitializationTimeoutMs());
+
+    return () => window.clearTimeout(timeoutId);
+  }, [rendererReady, webGLStatus]);
 
   if (!ready) return <LoadingScreen />;
   if (isMobile) return <MobilePrompt />;
-  return <GameBoard />;
+  if (webGLStatus === "checking") return <LoadingScreen />;
+  if (webGLStatus === "unsupported" || rendererTimedOut) {
+    return <LoadingScreen status="failed" />;
+  }
+
+  return (
+    <div className="relative h-screen w-full">
+      <div
+        aria-hidden={!rendererReady}
+        className={`h-full ${rendererReady ? "visible" : "invisible"}`}
+      >
+        <GameBoard onRendererReady={handleRendererReady} />
+      </div>
+      {!rendererReady && (
+        <div className="absolute inset-0">
+          <LoadingScreen />
+        </div>
+      )}
+    </div>
+  );
 }

@@ -1,6 +1,13 @@
 import { Spinner } from "@/components/ui/spinner";
+import { TriangleAlert } from "lucide-react";
 
-export function LoadingScreen() {
+interface LoadingScreenProps {
+  status?: "loading" | "failed";
+}
+
+export function LoadingScreen({ status = "loading" }: LoadingScreenProps) {
+  const failed = status === "failed";
+
   return (
     <main className="flex h-screen items-center justify-center bg-background px-6 text-center">
       <div className="flex flex-col items-center gap-6">
@@ -9,12 +16,21 @@ export function LoadingScreen() {
           在限定时间内尽可能多地命中目标
         </p>
         <div
-          role="status"
-          aria-live="polite"
-          className="flex h-8 items-center gap-2 text-sm text-muted-foreground"
+          role={failed ? "alert" : "status"}
+          aria-live={failed ? "assertive" : "polite"}
+          className="flex h-8 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground sm:text-sm"
         >
-          <Spinner aria-hidden="true" />
-          <span>加载中…</span>
+          {failed ? (
+            <>
+              <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
+              <span>加载失败，请使用最新版 Chrome 或 Edge 浏览器重试</span>
+            </>
+          ) : (
+            <>
+              <Spinner aria-hidden="true" />
+              <span>加载中…</span>
+            </>
+          )}
         </div>
       </div>
     </main>

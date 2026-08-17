@@ -80,6 +80,59 @@ async function mockScreenSize(page: Page, width: number, height: number) {
   );
 }
 
+type WebGL2FailureMode = "unavailable" | "throws";
+
+async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
+  await page.addInitScript((failureMode) => {
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    const mockedGetContext = function (
+      this: HTMLCanvasElement,
+      contextId: string,
+      ...args: unknown[]
+    ) {
+      if (contextId === "webgl2") {
+        if (failureMode === "throws") {
+          throw new Error("WebGL2 context creation failed");
+        }
+        return null;
+      }
+
+      return Reflect.apply(originalGetContext, this, [contextId, ...args]);
+    };
+
+    HTMLCanvasElement.prototype.getContext =
+      mockedGetContext as typeof originalGetContext;
+  }, mode);
+}
+
+async function configureWebGLStartupTest(
+  page: Page,
+  options: { rendererTimeoutMs?: number; suppressRendererReady?: boolean } = {},
+) {
+  await page.addInitScript((testOptions) => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: {
+        rendererTimeoutMs?: number;
+        suppressRendererReady?: boolean;
+        reportedStages?: string[];
+      };
+    };
+    state.__shootbang_webgl_test = {
+      ...testOptions,
+      reportedStages: [],
+    };
+  }, options);
+}
+
+async function getWebGLStartupReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: { reportedStages?: string[] };
+    };
+    return state.__shootbang_webgl_test?.reportedStages ?? [];
+  });
+}
+
 type PointerLockMockMode = "raw" | "fallback" | "fail";
 
 async function mockPointerLock(page: Page, mode: PointerLockMockMode) {
@@ -711,6 +764,92 @@ test.describe("移动端提示", () => {
   test("不渲染 3D 场景", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("canvas")).not.toBeVisible();
+  });
+});
+
+// ===== WebGL 启动兜底 =====
+
+test.describe("WebGL 启动兜底", () => {
+  test("WebGL2 不可用时在原加载位置显示兼容性提示", async ({ page }) => {
+    const pageErrors: Error[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error));
+    await configureWebGLStartupTest(page);
+    await mockWebGL2Failure(page, "unavailable");
+
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("alert").getByText(
+        "加载失败，请使用最新版 Chrome 或 Edge 浏览器重试",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Shootbang" })).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "开始" })).toHaveCount(0);
+    await expect.poll(() => getWebGLStartupReports(page)).toEqual([
+      "webgl2-check",
+    ]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("WebGL2 检测抛出异常时仍显示受控失败提示", async ({ page }) => {
+    const pageErrors: Error[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error));
+    await configureWebGLStartupTest(page);
+    await mockWebGL2Failure(page, "throws");
+
+    await page.goto("/");
+
+    await expect(
+      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect.poll(() => getWebGLStartupReports(page)).toEqual([
+      "webgl2-check",
+    ]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("Renderer 初始化超时后停止等待并显示失败提示", async ({ page }) => {
+    await configureWebGLStartupTest(page, {
+      rendererTimeoutMs: 50,
+      suppressRendererReady: true,
+    });
+
+    await page.goto("/");
+
+    await expect(
+      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect.poll(() => getWebGLStartupReports(page)).toEqual([
+      "renderer-timeout",
+    ]);
+  });
+
+  test.describe("移动设备优先级", () => {
+    test.use({ viewport: { width: 375, height: 667 } });
+
+    test("移动设备不执行 WebGL2 检测", async ({ page }) => {
+      await mockScreenSize(page, 375, 667);
+      await configureWebGLStartupTest(page);
+      await mockWebGL2Failure(page, "throws");
+
+      await page.goto("/");
+
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+      await expect(
+        page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      expect(await getWebGLStartupReports(page)).toEqual([]);
+    });
   });
 });
 
