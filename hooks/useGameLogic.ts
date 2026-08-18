@@ -12,8 +12,8 @@ import {
 export type { GameStats } from "@/stores/gameStore";
 import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
 import { type TargetState, spawnTarget, hideAllTargets } from "@/lib/grid";
+import { getDegreesPerCount, getRadiansPerCount } from "@/lib/sensitivity";
 
-const BASE_SENSITIVITY = 0.022 * (Math.PI / 180);
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
 const DEFAULT_TARGET_SIZE = 0.405;
@@ -66,16 +66,33 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     );
   }, []);
 
+  const applyMouseMovement = useCallback(
+    (movementX: number, movementY: number) => {
+      const { sensitivityMode, sensitivities } = useSettingsStore.getState();
+      const radiansPerCount = getRadiansPerCount(
+        sensitivityMode,
+        sensitivities[sensitivityMode],
+      );
+      // R3F bridge intentionally keeps camera rotation in a mutable ref per frame.
+      // eslint-disable-next-line react-hooks/immutability
+      mouseAccum.current.x -= movementX * radiansPerCount;
+      mouseAccum.current.y = Math.max(
+        -Math.PI / 2,
+        Math.min(
+          Math.PI / 2,
+          mouseAccum.current.y - movementY * radiansPerCount,
+        ),
+      );
+    },
+    [mouseAccum],
+  );
+
   // 鼠标移动 + 指针锁定事件
+  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (document.pointerLockElement) {
-        const s = BASE_SENSITIVITY * useSettingsStore.getState().sensitivity;
-        mouseAccum.current.x -= e.movementX * s;
-        mouseAccum.current.y = Math.max(
-          -Math.PI / 2,
-          Math.min(Math.PI / 2, mouseAccum.current.y - e.movementY * s),
-        );
+        applyMouseMovement(e.movementX, e.movementY);
       }
     };
 
@@ -103,7 +120,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       window.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", handlePointerLockChange);
     };
-  }, [setIsLocked, setCountdown, mouseAccum]);
+  }, [setIsLocked, setCountdown, applyMouseMovement]);
 
   // 开始游戏
   const startGame = useCallback(() => {
@@ -219,6 +236,22 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       getTimeLeft: () => timeLeftRef.current,
       getDuration: () => useSettingsStore.getState().duration,
       getPointerInputMode: () => pointerInputModeRef.current,
+      getSensitivityMode: () => useSettingsStore.getState().sensitivityMode,
+      getSensitivities: () => ({ ...useSettingsStore.getState().sensitivities }),
+      getDegreesPerCount: () => {
+        const { sensitivityMode } = useSettingsStore.getState();
+        return getDegreesPerCount(sensitivityMode);
+      },
+      getRadiansPerCount: () => {
+        const { sensitivityMode, sensitivities } = useSettingsStore.getState();
+        return getRadiansPerCount(
+          sensitivityMode,
+          sensitivities[sensitivityMode],
+        );
+      },
+      applyMouseMovement: (movementX: number, movementY: number) =>
+        applyMouseMovement(movementX, movementY),
+      getMouseAccum: () => ({ ...mouseAccum.current }),
       setPaused: (paused: boolean) => useGameStore.getState().setIsPaused(paused),
       recordHitTiming: () => recordHitTiming(),
       getHitIntervals: () => [...hitIntervalsRef.current],
@@ -232,7 +265,13 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     return () => {
       delete w.__shootbang_test;
     };
-  }, [targetsRef, recordHitTiming, getAverageReactionTime]);
+  }, [
+    targetsRef,
+    mouseAccum,
+    applyMouseMovement,
+    recordHitTiming,
+    getAverageReactionTime,
+  ]);
 
   // 组件卸载时清除倒计时
   useEffect(() => {

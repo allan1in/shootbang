@@ -1,13 +1,21 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { generateGridPositions } from "@/lib/grid";
+import {
+  DEFAULT_SENSITIVITY,
+  isSensitivityMode,
+  normalizeSensitivity,
+  type SensitivityMode,
+  type SensitivityValues,
+} from "@/lib/sensitivity";
 
 const TARGET_COUNT = 3;
 
 // ============ Settings ============
 
 interface SettingsState {
-  sensitivity: number;
+  sensitivityMode: SensitivityMode;
+  sensitivities: SensitivityValues;
   gridSize: number;
   duration: number;
   targetSize: string;
@@ -16,7 +24,10 @@ interface SettingsState {
   volume: number;
   volumePreview: number | null;
   muted: boolean;
-  setSensitivity: (v: number) => void;
+  setSensitivitySettings: (
+    mode: SensitivityMode,
+    sensitivities: SensitivityValues,
+  ) => void;
   setGridSize: (v: number) => void;
   setDuration: (v: number) => void;
   setTargetSize: (v: string) => void;
@@ -25,10 +36,44 @@ interface SettingsState {
   clearVolumePreview: () => void;
 }
 
+interface PersistedSettingsState {
+  sensitivityMode?: unknown;
+  sensitivities?: unknown;
+  sensitivity?: unknown;
+  gridSize?: number;
+  duration?: number;
+  targetSize?: string;
+  volume?: number;
+  muted?: boolean;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function resolveSensitivities(persistedState: unknown): SensitivityValues {
+  const persisted = asRecord(persistedState);
+  const newSensitivities = asRecord(persisted?.sensitivities);
+  const newCs2 = normalizeSensitivity(newSensitivities?.cs2);
+  const legacyCs2 = normalizeSensitivity(persisted?.sensitivity);
+  const valorant = normalizeSensitivity(newSensitivities?.valorant);
+
+  return {
+    cs2: newCs2 ?? legacyCs2 ?? DEFAULT_SENSITIVITY,
+    valorant: valorant ?? DEFAULT_SENSITIVITY,
+  };
+}
+
 export const useSettingsStore = create<SettingsState>()(
-  persist(
+  persist<SettingsState, [], [], PersistedSettingsState>(
     (set) => ({
-      sensitivity: 1.0,
+      sensitivityMode: "cs2",
+      sensitivities: {
+        cs2: DEFAULT_SENSITIVITY,
+        valorant: DEFAULT_SENSITIVITY,
+      },
       gridSize: 3,
       duration: 30,
       targetSize: "default",
@@ -37,7 +82,8 @@ export const useSettingsStore = create<SettingsState>()(
       volume: 100,
       volumePreview: null,
       muted: false,
-      setSensitivity: (v) => set({ sensitivity: v }),
+      setSensitivitySettings: (sensitivityMode, sensitivities) =>
+        set({ sensitivityMode, sensitivities: { ...sensitivities } }),
       setGridSize: (v) => set({ gridSize: v, gridPositions: generateGridPositions(v) }),
       setDuration: (v) => set({ duration: v }),
       setTargetSize: (v) => set({ targetSize: v }),
@@ -53,20 +99,45 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "shootbang-settings",
       version: 1,
-      migrate: (persistedState) => {
-        const state = persistedState as Partial<SettingsState>;
-        const storedVolume = typeof state.volume === "number"
-          ? state.volume
-          : state.muted ? 0 : 100;
+      migrate: (persistedState) => persistedState as PersistedSettingsState,
+      merge: (persistedState, currentState) => {
+        const persisted = asRecord(persistedState);
+        const gridSize = typeof persisted?.gridSize === "number"
+          ? persisted.gridSize
+          : currentState.gridSize;
+        const storedVolume = typeof persisted?.volume === "number"
+          ? persisted.volume
+          : persisted?.muted ? 0 : currentState.volume;
         const volume = Math.round(Math.min(100, Math.max(0, storedVolume)));
+
         return {
-          ...state,
+          ...currentState,
+          sensitivityMode: isSensitivityMode(persisted?.sensitivityMode)
+            ? persisted.sensitivityMode
+            : "cs2",
+          sensitivities: resolveSensitivities(persistedState),
+          gridSize,
+          duration: typeof persisted?.duration === "number"
+            ? persisted.duration
+            : currentState.duration,
+          targetSize: typeof persisted?.targetSize === "string"
+            ? persisted.targetSize
+            : currentState.targetSize,
+          gridPositions: generateGridPositions(gridSize),
           volume,
           volumePreview: null,
           muted: volume === 0,
-        } as SettingsState;
+        };
       },
-      partialize: (state) => ({ ...state, volumePreview: null }),
+      partialize: (state) => ({
+        sensitivityMode: state.sensitivityMode,
+        sensitivities: { ...state.sensitivities },
+        gridSize: state.gridSize,
+        duration: state.duration,
+        targetSize: state.targetSize,
+        volume: state.volume,
+        muted: state.muted,
+      }),
     },
   ),
 );

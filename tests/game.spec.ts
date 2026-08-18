@@ -23,6 +23,12 @@ interface ShootbangTestAPI {
   getTimeLeft: () => number;
   getDuration: () => number;
   getPointerInputMode: () => "none" | "raw" | "standard";
+  getSensitivityMode: () => "cs2" | "valorant";
+  getSensitivities: () => { cs2: number; valorant: number };
+  getDegreesPerCount: () => number;
+  getRadiansPerCount: () => number;
+  applyMouseMovement: (movementX: number, movementY: number) => void;
+  getMouseAccum: () => { x: number; y: number };
   setPaused: (paused: boolean) => void;
   recordHitTiming: () => void;
   getHitIntervals: () => number[];
@@ -285,21 +291,57 @@ test.describe("设置面板", () => {
     await expect(page.getByRole("tab", { name: "训练" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: "体验" })).toHaveAttribute("aria-selected", "false");
     await expect(page.getByText("灵敏度")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "游戏" })).toHaveText("CS2");
     await expect(page.getByRole("radio", { name: "默认" })).not.toBeVisible();
   });
 
   test("修改灵敏度并保存", async ({ page }) => {
-    const input = page.locator('input[type="number"]');
-    await input.fill("3.5");
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
+    await input.fill("3.125");
     await page.getByText("保存").click();
 
     // 验证 localStorage（Zustand persist 格式）
     const saved = await page.evaluate(() => {
       const raw = localStorage.getItem("shootbang-settings");
       if (!raw) return null;
-      return JSON.parse(raw).state.sensitivity;
+      return JSON.parse(raw).state;
     });
-    expect(saved).toBe(3.5);
+    expect(saved.sensitivityMode).toBe("cs2");
+    expect(saved.sensitivities).toEqual({ cs2: 3.125, valorant: 1 });
+    expect(saved).not.toHaveProperty("sensitivity");
+  });
+
+  test("两种模式分别保留草稿值且不会自动换算", async ({ page }) => {
+    const mode = page.getByRole("combobox", { name: "游戏" });
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
+
+    await input.fill("2.345");
+    await mode.click();
+    await page.getByRole("option", { name: "无畏契约" }).click();
+    await expect(input).toHaveValue("1");
+    await input.fill("0.314");
+
+    await mode.click();
+    await page.getByRole("option", { name: "CS2" }).click();
+    await expect(input).toHaveValue("2.345");
+
+    await mode.click();
+    await page.getByRole("option", { name: "无畏契约" }).click();
+    await expect(input).toHaveValue("0.314");
+    await page.getByText("保存").click();
+
+    await page.reload();
+    await waitForCanvas(page);
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({
+      mode: "valorant",
+      values: { cs2: 2.345, valorant: 0.314 },
+    });
   });
 
   test("取消关闭设置面板", async ({ page }) => {
@@ -764,6 +806,109 @@ test.describe("移动端提示", () => {
   test("不渲染 3D 场景", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("canvas")).not.toBeVisible();
+  });
+});
+
+// ===== 灵敏度兼容与转向 =====
+
+test.describe("灵敏度兼容与转向", () => {
+  async function seedPersistedSettings(
+    page: Page,
+    state: Record<string, unknown>,
+  ) {
+    await page.addInitScript((persistedState) => {
+      localStorage.setItem(
+        "shootbang-settings",
+        JSON.stringify({ state: persistedState, version: 1 }),
+      );
+    }, state);
+  }
+
+  test("旧 sensitivity 只作为 CS2 的兼容回退", async ({ page }) => {
+    await seedPersistedSettings(page, { sensitivity: 2.5 });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({ mode: "cs2", values: { cs2: 2.5, valorant: 1 } });
+  });
+
+  test("新版字段优先于旧字段并恢复所选模式", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivity: 9,
+      sensitivityMode: "valorant",
+      sensitivities: { cs2: 2.125, valorant: 0.314 },
+      duration: 60,
+      gridSize: 4,
+      targetSize: "small",
+      volume: 35,
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+        duration: api.getDuration(),
+      };
+    })).toEqual({
+      mode: "valorant",
+      values: { cs2: 2.125, valorant: 0.314 },
+      duration: 60,
+    });
+  });
+
+  test("非法新版数值按规则回退且不会接受字符串", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivity: 2.75,
+      sensitivityMode: "invalid",
+      sensitivities: { cs2: "3.5", valorant: 11 },
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({ mode: "cs2", values: { cs2: 2.75, valorant: 1 } });
+  });
+
+  test("无畏契约使用精确系数且横纵方向一致并限制 pitch", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivityMode: "valorant",
+      sensitivities: { cs2: 1, valorant: 0.35 },
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    const result = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.applyMouseMovement(100, 100);
+      const afterEqualMovement = api.getMouseAccum();
+      api.applyMouseMovement(0, 1_000_000);
+      return {
+        degreesPerCount: api.getDegreesPerCount(),
+        radiansPerCount: api.getRadiansPerCount(),
+        afterEqualMovement,
+        afterClamp: api.getMouseAccum(),
+      };
+    });
+
+    expect(result.degreesPerCount).toBe(0.07);
+    expect(result.radiansPerCount * (180 / Math.PI)).toBeCloseTo(0.0245, 12);
+    expect(result.afterEqualMovement.x * (180 / Math.PI)).toBeCloseTo(-2.45, 12);
+    expect(result.afterEqualMovement.y * (180 / Math.PI)).toBeCloseTo(-2.45, 12);
+    expect(result.afterClamp.y).toBe(-Math.PI / 2);
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,9 +13,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
 import type { Theme } from "@/hooks/useTheme";
+import {
+  isSensitivityMode,
+  normalizeSensitivity,
+  type SensitivityMode,
+  type SensitivityValues,
+} from "@/lib/sensitivity";
 
 const THEMES: { key: Theme; name: string; description: string }[] = [
   { key: "default", name: "默认", description: "经典网格" },
@@ -27,10 +40,12 @@ interface SettingsDialogProps {
   open: boolean;
   onCancel: () => void;
   onSave: () => void;
-  tempSensitivity: number;
+  tempSensitivityMode: SensitivityMode;
+  tempSensitivities: SensitivityValues;
   tempGridSize: number;
   tempDuration: number;
-  setTempSensitivity: (value: number) => void;
+  setTempSensitivityMode: (value: SensitivityMode) => void;
+  setTempSensitivity: (mode: SensitivityMode, value: number) => void;
   setTempGridSize: (value: number) => void;
   setTempDuration: (value: number) => void;
   tempTargetSize: string;
@@ -45,9 +60,11 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   open,
   onCancel,
   onSave,
-  tempSensitivity,
+  tempSensitivityMode,
+  tempSensitivities,
   tempGridSize,
   tempDuration,
+  setTempSensitivityMode,
   setTempSensitivity,
   setTempGridSize,
   setTempDuration,
@@ -58,35 +75,53 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   tempVolume,
   setTempVolume,
 }: SettingsDialogProps) {
-  const [sensitivityInput, setSensitivityInput] = useState(String(tempSensitivity));
-  const [previousSensitivity, setPreviousSensitivity] = useState(tempSensitivity);
+  const [sensitivityInput, setSensitivityInput] = useState(
+    String(tempSensitivities[tempSensitivityMode]),
+  );
+  const [inputMode, setInputMode] = useState(tempSensitivityMode);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (tempSensitivity !== previousSensitivity) {
-      setSensitivityInput(String(tempSensitivity));
-      setPreviousSensitivity(tempSensitivity);
+    if (open && !wasOpenRef.current) {
+      setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
+      setInputMode(tempSensitivityMode);
     }
-  }, [tempSensitivity, previousSensitivity]);
+    wasOpenRef.current = open;
+  }, [open, tempSensitivities, tempSensitivityMode]);
+
+  useEffect(() => {
+    if (tempSensitivityMode !== inputMode) {
+      setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
+      setInputMode(tempSensitivityMode);
+    }
+  }, [inputMode, tempSensitivities, tempSensitivityMode]);
 
   const commitSensitivity = () => {
-    const parsed = Number.parseFloat(sensitivityInput);
-    if (Number.isNaN(parsed) || parsed < 0.01) {
-      setSensitivityInput(String(previousSensitivity));
-      setTempSensitivity(previousSensitivity);
+    const normalized = normalizeSensitivity(Number.parseFloat(sensitivityInput));
+    if (normalized === null) {
+      setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
       return;
     }
 
-    const rounded = Math.round(Math.min(10, parsed) * 100) / 100;
-    setSensitivityInput(String(rounded));
-    setPreviousSensitivity(rounded);
-    setTempSensitivity(rounded);
+    setSensitivityInput(String(normalized));
+    setTempSensitivity(tempSensitivityMode, normalized);
   };
 
   const handleSensitivityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
-    const decimalIndex = value.indexOf(".");
-    if (decimalIndex !== -1 && value.length - decimalIndex > 3) return;
+    if (!/^\d*(?:\.\d{0,3})?$/.test(value)) return;
     setSensitivityInput(value);
+
+    const normalized = normalizeSensitivity(Number.parseFloat(value));
+    if (normalized !== null) {
+      setTempSensitivity(tempSensitivityMode, normalized);
+    }
+  };
+
+  const handleModeChange = (value: SensitivityMode | null) => {
+    if (!isSensitivityMode(value) || value === tempSensitivityMode) return;
+    commitSensitivity();
+    setTempSensitivityMode(value);
   };
 
   return (
@@ -111,17 +146,34 @@ export const SettingsDialog = React.memo(function SettingsDialog({
           <TabsContent value="training" className="h-[16.5rem] space-y-4">
             <div className="space-y-2">
               <Label htmlFor="sensitivity">灵敏度</Label>
-              <Input
-                id="sensitivity"
-                type="number"
-                min={0.01}
-                max={10}
-                step={0.01}
-                value={sensitivityInput}
-                onChange={handleSensitivityChange}
-                onBlur={commitSensitivity}
-                className="h-9 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
+              <div className="flex gap-2">
+                <Select
+                  value={tempSensitivityMode}
+                  onValueChange={handleModeChange}
+                >
+                  <SelectTrigger aria-label="游戏" className="w-[8.5rem] shrink-0">
+                    <SelectValue>
+                      {(value) => value === "valorant" ? "无畏契约" : "CS2"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cs2">CS2</SelectItem>
+                    <SelectItem value="valorant">无畏契约</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  id="sensitivity"
+                  aria-label="灵敏度数值"
+                  type="number"
+                  min={0.01}
+                  max={10}
+                  step={0.001}
+                  value={sensitivityInput}
+                  onChange={handleSensitivityChange}
+                  onBlur={commitSensitivity}
+                  className="h-9 min-w-0 flex-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

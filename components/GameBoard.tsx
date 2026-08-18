@@ -147,10 +147,12 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
           open={settings.showSettings}
           onCancel={cancelSettings}
           onSave={saveSettings}
-          tempSensitivity={settings.tempSensitivity}
+          tempSensitivityMode={settings.tempSensitivityMode}
+          tempSensitivities={settings.tempSensitivities}
           tempGridSize={settings.tempGridSize}
           tempDuration={settings.tempDuration}
           setTempSensitivity={settings.setTempSensitivity}
+          setTempSensitivityMode={settings.setTempSensitivityMode}
           setTempGridSize={settings.setTempGridSize}
           setTempDuration={settings.setTempDuration}
           tempTargetSize={settings.tempTargetSize}
