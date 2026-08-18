@@ -1,7 +1,7 @@
 import { devices, expect, test, type Page } from "@playwright/test";
 
 const WEBGL_FAILURE_MESSAGE =
-  "加载失败，请使用最新版 Chrome 或 Edge 浏览器重试";
+  "加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试";
 const { defaultBrowserType: _iphoneBrowser, ...iphone15 } =
   devices["iPhone 15"];
 const { defaultBrowserType: _ipadBrowser, ...ipadPro11 } =

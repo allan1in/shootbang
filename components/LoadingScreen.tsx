@@ -23,7 +23,9 @@ export function LoadingScreen({ status = "loading" }: LoadingScreenProps) {
           {failed ? (
             <>
               <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
-              <span>加载失败，请使用最新版 Chrome 或 Edge 浏览器重试</span>
+              <span>
+                加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试
+              </span>
             </>
           ) : (
             <>

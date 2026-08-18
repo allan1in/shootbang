@@ -8,24 +8,56 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { MobilePrompt } from "@/components/MobilePrompt";
 import {
   getRendererInitializationTimeoutMs,
+  installRendererStartupTestAccess,
   reportWebGLStartupFailure,
   shouldSuppressRendererReadyForTest,
 } from "@/lib/webglSupport";
+import {
+  abortRendererStartupAttempt,
+  finishRendererStartupAttempt,
+  markRendererStartupFailure,
+  markRendererStartupStage,
+  startRendererStartupAttempt,
+} from "@/lib/rendererStartupDiagnostics";
 
 // 动态导入：移动端只渲染提示语，不下载 three.js/tone.js 等游戏依赖
-const GameBoard = dynamic(() => import("@/components/GameBoard"), {
-  ssr: false,
-  loading: () => <LoadingScreen />,
-});
+const GameBoard = dynamic(
+  async () => {
+    markRendererStartupStage("gameboard-import-started");
+    try {
+      const gameBoardModule = await import("@/components/GameBoard");
+      markRendererStartupStage("gameboard-import-completed");
+      return gameBoardModule;
+    } catch (error) {
+      markRendererStartupFailure("gameboard-import", error);
+      throw error;
+    }
+  },
+  {
+    ssr: false,
+    loading: () => <LoadingScreen />,
+  },
+);
 
 export function MobileGate() {
   const { isMobile, ready } = useMobileDetect();
+  useEffect(() => {
+    if (!ready || isMobile) return;
+
+    startRendererStartupAttempt();
+    markRendererStartupStage("device-check-completed");
+    installRendererStartupTestAccess();
+    return abortRendererStartupAttempt;
+  }, [isMobile, ready]);
+
   const webGLStatus = useWebGLSupport(ready && !isMobile);
   const [rendererReady, setRendererReady] = useState(false);
   const [rendererTimedOut, setRendererTimedOut] = useState(false);
 
   const handleRendererReady = useCallback(() => {
     if (shouldSuppressRendererReadyForTest()) return;
+    markRendererStartupStage("renderer-created");
+    finishRendererStartupAttempt();
     setRendererReady(true);
   }, []);
 

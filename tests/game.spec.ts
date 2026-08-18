@@ -88,6 +88,41 @@ async function mockScreenSize(page: Page, width: number, height: number) {
 
 type WebGL2FailureMode = "unavailable" | "throws";
 
+interface RendererStartupDiagnosticReport {
+  stage: string;
+  snapshot: {
+    monitorVersion: string;
+    elapsedMs: number;
+    lastCompletedStage: string;
+    stages: Record<string, number>;
+    failure?: { stage: string; errorName?: string; errorMessage?: string };
+    pageLifecycle: {
+      visibility: string;
+      focused: boolean;
+      online: boolean;
+      hiddenCount: number;
+      blurCount: number;
+    };
+    rendererState: {
+      rootExists: boolean;
+      canvasExists: boolean;
+      rendererCreated: boolean;
+    };
+    webgl?: {
+      hasWebGL2Constructor: boolean;
+      contextCreated: boolean;
+      checkDurationMs: number;
+      softwareRenderer: boolean;
+      errorName?: string;
+      errorMessage?: string;
+    };
+    resources: {
+      scriptCount: number;
+      totalScriptTransferBytes: number;
+    };
+  };
+}
+
 async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
   await page.addInitScript((failureMode) => {
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
@@ -121,13 +156,26 @@ async function configureWebGLStartupTest(
         rendererTimeoutMs?: number;
         suppressRendererReady?: boolean;
         reportedStages?: string[];
+        diagnosticReports?: RendererStartupDiagnosticReport[];
       };
     };
     state.__shootbang_webgl_test = {
       ...testOptions,
       reportedStages: [],
+      diagnosticReports: [],
     };
   }, options);
+}
+
+async function getWebGLStartupDiagnosticReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: {
+        diagnosticReports?: RendererStartupDiagnosticReport[];
+      };
+    };
+    return state.__shootbang_webgl_test?.diagnosticReports ?? [];
+  });
 }
 
 async function getWebGLStartupReports(page: Page) {
@@ -923,7 +971,7 @@ test.describe("WebGL 启动兜底", () => {
 
     await expect(
       page.getByRole("alert").getByText(
-        "加载失败，请使用最新版 Chrome 或 Edge 浏览器重试",
+        "加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试",
         { exact: true },
       ),
     ).toBeVisible();
@@ -933,6 +981,23 @@ test.describe("WebGL 启动兜底", () => {
     await expect.poll(() => getWebGLStartupReports(page)).toEqual([
       "webgl2-check",
     ]);
+    const [report] = await getWebGLStartupDiagnosticReports(page);
+    expect(report.stage).toBe("webgl2-check");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
+    expect(report.snapshot.lastCompletedStage).toBe(
+      "webgl2-check-completed",
+    );
+    expect(report.snapshot.failure?.stage).toBe("webgl2-check");
+    expect(report.snapshot.webgl).toMatchObject({
+      hasWebGL2Constructor: true,
+      contextCreated: false,
+      softwareRenderer: false,
+    });
+    expect(report.snapshot.rendererState).toEqual({
+      rootExists: false,
+      canvasExists: false,
+      rendererCreated: false,
+    });
     expect(pageErrors).toEqual([]);
   });
 
@@ -945,7 +1010,7 @@ test.describe("WebGL 启动兜底", () => {
     await page.goto("/");
 
     await expect(
-      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
         exact: true,
       }),
     ).toBeVisible();
@@ -965,7 +1030,7 @@ test.describe("WebGL 启动兜底", () => {
     await page.goto("/");
 
     await expect(
-      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
         exact: true,
       }),
     ).toBeVisible();
@@ -973,6 +1038,20 @@ test.describe("WebGL 启动兜底", () => {
     await expect.poll(() => getWebGLStartupReports(page)).toEqual([
       "renderer-timeout",
     ]);
+    const [report] = await getWebGLStartupDiagnosticReports(page);
+    expect(report.stage).toBe("renderer-timeout");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
+    expect([
+      "gameboard-import-started",
+      "gameboard-import-completed",
+      "gameboard-mounted",
+      "canvas-render-started",
+    ]).toContain(report.snapshot.lastCompletedStage);
+    expect(report.snapshot.failure?.stage).toBe("renderer-timeout");
+    expect(report.snapshot.elapsedMs).toBeGreaterThanOrEqual(50);
+    expect(report.snapshot.webgl?.contextCreated).toBe(true);
+    expect(report.snapshot.rendererState.rendererCreated).toBe(false);
+    expect(report.snapshot.resources.scriptCount).toBeGreaterThan(0);
   });
 
   test.describe("移动设备优先级", () => {
@@ -987,7 +1066,7 @@ test.describe("WebGL 启动兜底", () => {
 
       await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
       await expect(
-        page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+        page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
           exact: true,
         }),
       ).toHaveCount(0);
