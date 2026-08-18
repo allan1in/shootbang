@@ -434,16 +434,14 @@ test.describe("设置面板", () => {
     expect(Math.abs(trainingPanel.width - experiencePanel.width)).toBeLessThanOrEqual(1);
     await expect(page.getByRole("radio", { name: "默认" })).toBeVisible();
     const slider = page.getByRole("slider", { name: "音量" });
-    const control = page.locator('[data-slot="slider-control"]');
-    const track = page.locator('[data-slot="slider-track"]');
+    const control = page.locator('[data-base-ui-slider-control]');
     const thumb = page.locator('[data-slot="slider-thumb"]');
     await expect(slider).toBeVisible();
+    await expect(thumb).toHaveCount(1);
 
     await slider.fill("0");
     const controlAtMin = (await control.boundingBox())!;
-    const trackAtMin = (await track.boundingBox())!;
     const thumbAtMin = (await thumb.boundingBox())!;
-    expect(Math.abs(trackAtMin.width + thumbAtMin.width - controlAtMin.width)).toBeLessThanOrEqual(1);
     expect(thumbAtMin.x).toBeGreaterThanOrEqual(controlAtMin.x - 0.5);
 
     await slider.fill("100");

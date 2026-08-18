@@ -1,45 +1,60 @@
-"use client"
-
-import * as React from "react"
 import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 
 import { cn } from "@/lib/utils"
 
-type SliderProps = SliderPrimitive.Root.Props<number> & {
-  getAriaLabel?: (index: number) => string
-}
+type SliderProps<Value extends number | readonly number[]> =
+  SliderPrimitive.Root.Props<Value> & {
+    getAriaLabel?: (index: number) => string
+  }
 
-function Slider({
+function Slider<Value extends number | readonly number[]>({
   className,
+  defaultValue,
+  value,
+  min = 0,
+  max = 100,
   getAriaLabel,
-  thumbAlignment = "edge",
   ...props
-}: SliderProps) {
+}: SliderProps<Value>) {
+  const _values = Array.isArray(value)
+    ? value
+    : value !== undefined
+      ? [value]
+      : Array.isArray(defaultValue)
+        ? defaultValue
+        : defaultValue !== undefined
+          ? [defaultValue]
+          : [min]
+
   return (
     <SliderPrimitive.Root
+      className={cn("data-horizontal:w-full data-vertical:h-full", className)}
       data-slot="slider"
-      className={cn("relative flex w-full touch-none select-none items-center", className)}
-      thumbAlignment={thumbAlignment}
+      defaultValue={defaultValue}
+      value={value}
+      min={min}
+      max={max}
+      thumbAlignment="edge"
       {...props}
     >
-      <SliderPrimitive.Control
-        data-slot="slider-control"
-        className="relative flex w-full cursor-pointer items-center py-2"
-      >
+      <SliderPrimitive.Control className="relative flex w-full cursor-pointer touch-none items-center select-none data-disabled:cursor-default data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col">
         <SliderPrimitive.Track
           data-slot="slider-track"
-          className="relative mx-2 h-1.5 w-[calc(100%-1rem)] overflow-hidden rounded-full bg-muted"
+          className="relative grow overflow-hidden rounded-full bg-muted select-none data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1"
         >
           <SliderPrimitive.Indicator
-            data-slot="slider-indicator"
-            className="h-full rounded-full bg-primary"
+            data-slot="slider-range"
+            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
           />
         </SliderPrimitive.Track>
-        <SliderPrimitive.Thumb
-          data-slot="slider-thumb"
-          getAriaLabel={getAriaLabel}
-          className="size-4 rounded-full border border-primary bg-background shadow-sm outline-none transition-shadow focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
-        />
+        {Array.from({ length: _values.length }, (_, index) => (
+          <SliderPrimitive.Thumb
+            data-slot="slider-thumb"
+            key={index}
+            getAriaLabel={getAriaLabel}
+            className="relative block size-3 shrink-0 cursor-pointer rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+          />
+        ))}
       </SliderPrimitive.Control>
     </SliderPrimitive.Root>
   )
