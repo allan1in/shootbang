@@ -185,7 +185,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       {theme === "blizzard" && (
         <div
           className="absolute inset-0 z-10 pointer-events-none"
-          style={{ backgroundColor: "rgba(255,255,255,0.15)", opacity: "var(--whiteout, 0)" }}
+          style={{ backgroundColor: "rgba(190,196,205,0.08)", opacity: "var(--whiteout, 0)" }}
         />
       )}
 
