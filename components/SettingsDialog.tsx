@@ -137,8 +137,11 @@ export const SettingsDialog = React.memo(function SettingsDialog({
           <DialogTitle>设置</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="training">
-          <TabsList aria-label="设置分类">
+        <Tabs defaultValue="training" className="gap-4">
+          <TabsList
+            aria-label="设置分类"
+            className="w-full bg-muted/50 group-data-horizontal/tabs:h-9"
+          >
             <TabsTrigger value="training">训练</TabsTrigger>
             <TabsTrigger value="experience">体验</TabsTrigger>
           </TabsList>
@@ -146,12 +149,12 @@ export const SettingsDialog = React.memo(function SettingsDialog({
           <TabsContent value="training" className="h-[16.5rem] space-y-4">
             <div className="space-y-2">
               <Label htmlFor="sensitivity">灵敏度</Label>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <Select
                   value={tempSensitivityMode}
                   onValueChange={handleModeChange}
                 >
-                  <SelectTrigger aria-label="游戏" className="w-[8.5rem] shrink-0">
+                  <SelectTrigger aria-label="游戏" className="w-full min-w-0">
                     <SelectValue>
                       {(value) => value === "valorant" ? "无畏契约" : "CS2"}
                     </SelectValue>
@@ -171,7 +174,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
                   value={sensitivityInput}
                   onChange={handleSensitivityChange}
                   onBlur={commitSensitivity}
-                  className="h-9 min-w-0 flex-1 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="h-9 min-w-0 w-full [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
             </div>
