@@ -31,9 +31,9 @@ import {
 } from "@/lib/sensitivity";
 
 const THEMES: { key: Theme; name: string; description: string }[] = [
-  { key: "default", name: "默认", description: "经典网格" },
-  { key: "thunderstorm", name: "雷雨", description: "小心闪电" },
-  { key: "blizzard", name: "暴雪", description: "寒风呼啸" },
+  { key: "default", name: "默认", description: "经典网格射击" },
+  { key: "thunderstorm", name: "雷雨", description: "闪电会短暂致盲" },
+  { key: "blizzard", name: "暴雪", description: "风暴会遮挡视线" },
 ];
 
 interface SettingsDialogProps {
@@ -219,18 +219,22 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             />
           </TabsContent>
 
-          <TabsContent value="experience" className="h-[16.5rem] flex-none space-y-4">
-            <div className="space-y-2">
+          <TabsContent
+            value="experience"
+            className="flex h-[16.5rem] flex-none flex-col gap-4"
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
               <Label>主题</Label>
               <RadioGroup
                 value={tempTheme}
                 onValueChange={(value) => setTempTheme(value as Theme)}
                 aria-label="主题"
+                className="min-h-0 flex-1 grid-rows-3"
               >
                 {THEMES.map((theme) => (
                   <label
                     key={theme.key}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 transition-colors hover:bg-muted"
+                    className="flex h-full cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 transition-colors hover:bg-muted"
                   >
                     <RadioGroupItem value={theme.key} aria-label={theme.name} />
                     <span>
@@ -244,7 +248,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
               </RadioGroup>
             </div>
 
-            <div className="space-y-2">
+            <div className="flex-none space-y-2">
               <div className="flex items-center justify-between gap-4">
                 <Label>音量</Label>
                 <span className="text-xs tabular-nums text-muted-foreground">
