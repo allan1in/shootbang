@@ -19,7 +19,7 @@ export function SceneBridge({ theme }: { theme?: string }) {
     camera.rotation.order = "YXZ"; // eslint-disable-line react-hooks/immutability
 
     const cs = getComputedStyle(document.documentElement);
-    const bgColor = theme === "thunderstorm" ? 0x0a0a0a : theme === "blizzard" ? 0xb0b8c0 : varToHex(cs, "--background");
+    const bgColor = theme === "thunderstorm" || theme === "blizzard" ? 0x0a0a0a : varToHex(cs, "--background");
     scene.background = new THREE.Color(bgColor); // eslint-disable-line react-hooks/immutability
     scene.fog = theme === "thunderstorm" ? new THREE.Fog(bgColor, 15, 80) : theme === "blizzard" ? new THREE.Fog(bgColor, 3, 80) : null;
   }, [scene, camera, sceneRef, cameraRef, theme]);

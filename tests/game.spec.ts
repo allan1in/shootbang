@@ -373,9 +373,9 @@ test.describe("设置面板", () => {
 
   test("显示体验设置并保存主题和音量", async ({ page }) => {
     await page.getByRole("tab", { name: "体验" }).click();
-    await expect(page.getByText("经典网格", { exact: true })).toBeVisible();
-    await expect(page.getByText("小心闪电", { exact: true })).toBeVisible();
-    await expect(page.getByText("寒风呼啸", { exact: true })).toBeVisible();
+    await expect(page.getByText("经典网格射击", { exact: true })).toBeVisible();
+    await expect(page.getByText("闪电会短暂致盲", { exact: true })).toBeVisible();
+    await expect(page.getByText("风暴会遮挡视线", { exact: true })).toBeVisible();
     await page.getByRole("radio", { name: "暴雪" }).click();
     await page.getByRole("slider", { name: "音量" }).fill("35");
     const persistedBeforeSave = await page.evaluate(() =>
@@ -422,7 +422,7 @@ test.describe("设置面板", () => {
     await expect(content).toHaveClass(/backdrop-blur-xl/);
     await expect(overlay).toHaveClass(/bg-background\/30/);
     await expect(page.getByText("调整训练难度与体验偏好。", { exact: true })).not.toBeVisible();
-    await expect(page.getByText("经典网格", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("经典网格射击", { exact: true })).not.toBeVisible();
     await expect(page.getByText("关闭命中、未命中和倒计时音效", { exact: true })).not.toBeVisible();
 
     const input = page.locator('input[type="number"]');
