@@ -146,7 +146,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             <TabsTrigger value="experience">体验</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="training" className="h-[16.5rem] space-y-4">
+          <TabsContent value="training" className="h-[16.5rem] flex-none space-y-4">
             <div className="space-y-2">
               <Label htmlFor="sensitivity">灵敏度</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -219,7 +219,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             />
           </TabsContent>
 
-          <TabsContent value="experience" className="h-[16.5rem] space-y-4">
+          <TabsContent value="experience" className="h-[16.5rem] flex-none space-y-4">
             <div className="space-y-2">
               <Label>主题</Label>
               <RadioGroup

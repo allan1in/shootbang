@@ -430,7 +430,7 @@ test.describe("设置面板", () => {
     const trainingPanel = (await content.boundingBox())!;
     await page.getByRole("tab", { name: "体验" }).click();
     const experiencePanel = (await content.boundingBox())!;
-    expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(trainingPanel.width - experiencePanel.width)).toBeLessThanOrEqual(1);
     await expect(page.getByRole("radio", { name: "默认" })).toBeVisible();
     const slider = page.getByRole("slider", { name: "音量" });
