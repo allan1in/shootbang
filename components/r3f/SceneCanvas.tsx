@@ -39,6 +39,7 @@ export function SceneCanvas({
     <Canvas
       gl={{
         antialias: true,
+        powerPreference: "high-performance",
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.2,
       }}

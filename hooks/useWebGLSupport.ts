@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { detectWebGL2Support } from "@/lib/webglSupport";
+import { markRendererStartupStage } from "@/lib/rendererStartupDiagnostics";
 
 export type WebGLSupportStatus =
   | "checking"
@@ -14,8 +15,11 @@ export function useWebGLSupport(enabled: boolean): WebGLSupportStatus {
   useEffect(() => {
     if (!enabled) return;
 
+    markRendererStartupStage("webgl2-check-started");
+    const supported = detectWebGL2Support();
+    markRendererStartupStage("webgl2-check-completed");
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setStatus(detectWebGL2Support() ? "supported" : "unsupported");
+    setStatus(supported ? "supported" : "unsupported");
   }, [enabled]);
 
   return status;

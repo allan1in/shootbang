@@ -2,6 +2,13 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import {
+  claimRendererStartupFailureReport,
+  finishRendererStartupAttempt,
+  getRendererStartupDiagnosticsSnapshot,
+  markRendererStartupFailure,
+} from "@/lib/rendererStartupDiagnostics";
+import { createRendererStartupSentryData } from "@/lib/webglSupport";
 
 interface Props {
   children: ReactNode;
@@ -20,6 +27,30 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const activeStartup = getRendererStartupDiagnosticsSnapshot();
+    if (activeStartup) {
+      const failureStage = activeStartup.failure?.stage ?? "react-render";
+      markRendererStartupFailure(failureStage, error);
+      const snapshot = claimRendererStartupFailureReport(failureStage, error);
+      if (snapshot) {
+        const sentryData = createRendererStartupSentryData(
+          failureStage,
+          snapshot,
+        );
+        Sentry.captureException(error, {
+          ...sentryData,
+          contexts: {
+            ...sentryData.contexts,
+            react: {
+              componentStack: errorInfo.componentStack,
+            },
+          },
+        });
+        finishRendererStartupAttempt();
+        return;
+      }
+    }
+
     Sentry.captureException(error, {
       contexts: {
         react: {

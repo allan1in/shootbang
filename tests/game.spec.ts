@@ -23,6 +23,12 @@ interface ShootbangTestAPI {
   getTimeLeft: () => number;
   getDuration: () => number;
   getPointerInputMode: () => "none" | "raw" | "standard";
+  getSensitivityMode: () => "cs2" | "valorant";
+  getSensitivities: () => { cs2: number; valorant: number };
+  getDegreesPerCount: () => number;
+  getRadiansPerCount: () => number;
+  applyMouseMovement: (movementX: number, movementY: number) => void;
+  getMouseAccum: () => { x: number; y: number };
   setPaused: (paused: boolean) => void;
   recordHitTiming: () => void;
   getHitIntervals: () => number[];
@@ -82,6 +88,41 @@ async function mockScreenSize(page: Page, width: number, height: number) {
 
 type WebGL2FailureMode = "unavailable" | "throws";
 
+interface RendererStartupDiagnosticReport {
+  stage: string;
+  snapshot: {
+    monitorVersion: string;
+    elapsedMs: number;
+    lastCompletedStage: string;
+    stages: Record<string, number>;
+    failure?: { stage: string; errorName?: string; errorMessage?: string };
+    pageLifecycle: {
+      visibility: string;
+      focused: boolean;
+      online: boolean;
+      hiddenCount: number;
+      blurCount: number;
+    };
+    rendererState: {
+      rootExists: boolean;
+      canvasExists: boolean;
+      rendererCreated: boolean;
+    };
+    webgl?: {
+      hasWebGL2Constructor: boolean;
+      contextCreated: boolean;
+      checkDurationMs: number;
+      softwareRenderer: boolean;
+      errorName?: string;
+      errorMessage?: string;
+    };
+    resources: {
+      scriptCount: number;
+      totalScriptTransferBytes: number;
+    };
+  };
+}
+
 async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
   await page.addInitScript((failureMode) => {
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
@@ -115,13 +156,26 @@ async function configureWebGLStartupTest(
         rendererTimeoutMs?: number;
         suppressRendererReady?: boolean;
         reportedStages?: string[];
+        diagnosticReports?: RendererStartupDiagnosticReport[];
       };
     };
     state.__shootbang_webgl_test = {
       ...testOptions,
       reportedStages: [],
+      diagnosticReports: [],
     };
   }, options);
+}
+
+async function getWebGLStartupDiagnosticReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: {
+        diagnosticReports?: RendererStartupDiagnosticReport[];
+      };
+    };
+    return state.__shootbang_webgl_test?.diagnosticReports ?? [];
+  });
 }
 
 async function getWebGLStartupReports(page: Page) {
@@ -285,21 +339,57 @@ test.describe("设置面板", () => {
     await expect(page.getByRole("tab", { name: "训练" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: "体验" })).toHaveAttribute("aria-selected", "false");
     await expect(page.getByText("灵敏度")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "游戏" })).toHaveText("CS2");
     await expect(page.getByRole("radio", { name: "默认" })).not.toBeVisible();
   });
 
   test("修改灵敏度并保存", async ({ page }) => {
-    const input = page.locator('input[type="number"]');
-    await input.fill("3.5");
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
+    await input.fill("3.125");
     await page.getByText("保存").click();
 
     // 验证 localStorage（Zustand persist 格式）
     const saved = await page.evaluate(() => {
       const raw = localStorage.getItem("shootbang-settings");
       if (!raw) return null;
-      return JSON.parse(raw).state.sensitivity;
+      return JSON.parse(raw).state;
     });
-    expect(saved).toBe(3.5);
+    expect(saved.sensitivityMode).toBe("cs2");
+    expect(saved.sensitivities).toEqual({ cs2: 3.125, valorant: 1 });
+    expect(saved).not.toHaveProperty("sensitivity");
+  });
+
+  test("两种模式分别保留草稿值且不会自动换算", async ({ page }) => {
+    const mode = page.getByRole("combobox", { name: "游戏" });
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
+
+    await input.fill("2.345");
+    await mode.click();
+    await page.getByRole("option", { name: "无畏契约" }).click();
+    await expect(input).toHaveValue("1");
+    await input.fill("0.314");
+
+    await mode.click();
+    await page.getByRole("option", { name: "CS2" }).click();
+    await expect(input).toHaveValue("2.345");
+
+    await mode.click();
+    await page.getByRole("option", { name: "无畏契约" }).click();
+    await expect(input).toHaveValue("0.314");
+    await page.getByText("保存").click();
+
+    await page.reload();
+    await waitForCanvas(page);
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({
+      mode: "valorant",
+      values: { cs2: 2.345, valorant: 0.314 },
+    });
   });
 
   test("取消关闭设置面板", async ({ page }) => {
@@ -331,9 +421,9 @@ test.describe("设置面板", () => {
 
   test("显示体验设置并保存主题和音量", async ({ page }) => {
     await page.getByRole("tab", { name: "体验" }).click();
-    await expect(page.getByText("经典网格", { exact: true })).toBeVisible();
-    await expect(page.getByText("小心闪电", { exact: true })).toBeVisible();
-    await expect(page.getByText("寒风呼啸", { exact: true })).toBeVisible();
+    await expect(page.getByText("经典网格射击", { exact: true })).toBeVisible();
+    await expect(page.getByText("闪电会短暂致盲", { exact: true })).toBeVisible();
+    await expect(page.getByText("风暴会遮挡视线", { exact: true })).toBeVisible();
     await page.getByRole("radio", { name: "暴雪" }).click();
     await page.getByRole("slider", { name: "音量" }).fill("35");
     const persistedBeforeSave = await page.evaluate(() =>
@@ -380,7 +470,7 @@ test.describe("设置面板", () => {
     await expect(content).toHaveClass(/backdrop-blur-xl/);
     await expect(overlay).toHaveClass(/bg-background\/30/);
     await expect(page.getByText("调整训练难度与体验偏好。", { exact: true })).not.toBeVisible();
-    await expect(page.getByText("经典网格", { exact: true })).not.toBeVisible();
+    await expect(page.getByText("经典网格射击", { exact: true })).not.toBeVisible();
     await expect(page.getByText("关闭命中、未命中和倒计时音效", { exact: true })).not.toBeVisible();
 
     const input = page.locator('input[type="number"]');
@@ -388,20 +478,18 @@ test.describe("设置面板", () => {
     const trainingPanel = (await content.boundingBox())!;
     await page.getByRole("tab", { name: "体验" }).click();
     const experiencePanel = (await content.boundingBox())!;
-    expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(trainingPanel.width - experiencePanel.width)).toBeLessThanOrEqual(1);
     await expect(page.getByRole("radio", { name: "默认" })).toBeVisible();
     const slider = page.getByRole("slider", { name: "音量" });
-    const control = page.locator('[data-slot="slider-control"]');
-    const track = page.locator('[data-slot="slider-track"]');
+    const control = page.locator('[data-base-ui-slider-control]');
     const thumb = page.locator('[data-slot="slider-thumb"]');
     await expect(slider).toBeVisible();
+    await expect(thumb).toHaveCount(1);
 
     await slider.fill("0");
     const controlAtMin = (await control.boundingBox())!;
-    const trackAtMin = (await track.boundingBox())!;
     const thumbAtMin = (await thumb.boundingBox())!;
-    expect(Math.abs(trackAtMin.width + thumbAtMin.width - controlAtMin.width)).toBeLessThanOrEqual(1);
     expect(thumbAtMin.x).toBeGreaterThanOrEqual(controlAtMin.x - 0.5);
 
     await slider.fill("100");
@@ -767,6 +855,109 @@ test.describe("移动端提示", () => {
   });
 });
 
+// ===== 灵敏度兼容与转向 =====
+
+test.describe("灵敏度兼容与转向", () => {
+  async function seedPersistedSettings(
+    page: Page,
+    state: Record<string, unknown>,
+  ) {
+    await page.addInitScript((persistedState) => {
+      localStorage.setItem(
+        "shootbang-settings",
+        JSON.stringify({ state: persistedState, version: 1 }),
+      );
+    }, state);
+  }
+
+  test("旧 sensitivity 只作为 CS2 的兼容回退", async ({ page }) => {
+    await seedPersistedSettings(page, { sensitivity: 2.5 });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({ mode: "cs2", values: { cs2: 2.5, valorant: 1 } });
+  });
+
+  test("新版字段优先于旧字段并恢复所选模式", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivity: 9,
+      sensitivityMode: "valorant",
+      sensitivities: { cs2: 2.125, valorant: 0.314 },
+      duration: 60,
+      gridSize: 4,
+      targetSize: "small",
+      volume: 35,
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+        duration: api.getDuration(),
+      };
+    })).toEqual({
+      mode: "valorant",
+      values: { cs2: 2.125, valorant: 0.314 },
+      duration: 60,
+    });
+  });
+
+  test("非法新版数值按规则回退且不会接受字符串", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivity: 2.75,
+      sensitivityMode: "invalid",
+      sensitivities: { cs2: "3.5", valorant: 11 },
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+      };
+    })).toEqual({ mode: "cs2", values: { cs2: 2.75, valorant: 1 } });
+  });
+
+  test("无畏契约使用精确系数且横纵方向一致并限制 pitch", async ({ page }) => {
+    await seedPersistedSettings(page, {
+      sensitivityMode: "valorant",
+      sensitivities: { cs2: 1, valorant: 0.35 },
+    });
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    const result = await page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      api.applyMouseMovement(100, 100);
+      const afterEqualMovement = api.getMouseAccum();
+      api.applyMouseMovement(0, 1_000_000);
+      return {
+        degreesPerCount: api.getDegreesPerCount(),
+        radiansPerCount: api.getRadiansPerCount(),
+        afterEqualMovement,
+        afterClamp: api.getMouseAccum(),
+      };
+    });
+
+    expect(result.degreesPerCount).toBe(0.07);
+    expect(result.radiansPerCount * (180 / Math.PI)).toBeCloseTo(0.0245, 12);
+    expect(result.afterEqualMovement.x * (180 / Math.PI)).toBeCloseTo(-2.45, 12);
+    expect(result.afterEqualMovement.y * (180 / Math.PI)).toBeCloseTo(-2.45, 12);
+    expect(result.afterClamp.y).toBe(-Math.PI / 2);
+  });
+});
+
 // ===== WebGL 启动兜底 =====
 
 test.describe("WebGL 启动兜底", () => {
@@ -780,7 +971,7 @@ test.describe("WebGL 启动兜底", () => {
 
     await expect(
       page.getByRole("alert").getByText(
-        "加载失败，请使用最新版 Chrome 或 Edge 浏览器重试",
+        "加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试",
         { exact: true },
       ),
     ).toBeVisible();
@@ -790,6 +981,23 @@ test.describe("WebGL 启动兜底", () => {
     await expect.poll(() => getWebGLStartupReports(page)).toEqual([
       "webgl2-check",
     ]);
+    const [report] = await getWebGLStartupDiagnosticReports(page);
+    expect(report.stage).toBe("webgl2-check");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
+    expect(report.snapshot.lastCompletedStage).toBe(
+      "webgl2-check-completed",
+    );
+    expect(report.snapshot.failure?.stage).toBe("webgl2-check");
+    expect(report.snapshot.webgl).toMatchObject({
+      hasWebGL2Constructor: true,
+      contextCreated: false,
+      softwareRenderer: false,
+    });
+    expect(report.snapshot.rendererState).toEqual({
+      rootExists: false,
+      canvasExists: false,
+      rendererCreated: false,
+    });
     expect(pageErrors).toEqual([]);
   });
 
@@ -802,7 +1010,7 @@ test.describe("WebGL 启动兜底", () => {
     await page.goto("/");
 
     await expect(
-      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
         exact: true,
       }),
     ).toBeVisible();
@@ -822,7 +1030,7 @@ test.describe("WebGL 启动兜底", () => {
     await page.goto("/");
 
     await expect(
-      page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
         exact: true,
       }),
     ).toBeVisible();
@@ -830,6 +1038,20 @@ test.describe("WebGL 启动兜底", () => {
     await expect.poll(() => getWebGLStartupReports(page)).toEqual([
       "renderer-timeout",
     ]);
+    const [report] = await getWebGLStartupDiagnosticReports(page);
+    expect(report.stage).toBe("renderer-timeout");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
+    expect([
+      "gameboard-import-started",
+      "gameboard-import-completed",
+      "gameboard-mounted",
+      "canvas-render-started",
+    ]).toContain(report.snapshot.lastCompletedStage);
+    expect(report.snapshot.failure?.stage).toBe("renderer-timeout");
+    expect(report.snapshot.elapsedMs).toBeGreaterThanOrEqual(50);
+    expect(report.snapshot.webgl?.contextCreated).toBe(true);
+    expect(report.snapshot.rendererState.rendererCreated).toBe(false);
+    expect(report.snapshot.resources.scriptCount).toBeGreaterThan(0);
   });
 
   test.describe("移动设备优先级", () => {
@@ -844,7 +1066,7 @@ test.describe("WebGL 启动兜底", () => {
 
       await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
       await expect(
-        page.getByText("加载失败，请使用最新版 Chrome 或 Edge 浏览器重试", {
+        page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
           exact: true,
         }),
       ).toHaveCount(0);

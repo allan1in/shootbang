@@ -1,4 +1,8 @@
 import { getCtx, getMasterGainNode } from "@/lib/sounds";
+import {
+  createBlizzardGustTimeline,
+  type BlizzardGustTimeline,
+} from "@/lib/blizzardTimeline";
 
 let noiseBuffer: AudioBuffer | null = null;
 
@@ -25,7 +29,7 @@ export function muteWind(muted: boolean) {
   currentWind?.setMuted(muted);
 }
 
-export function startWind(onGust?: (duration: number) => void) {
+export function startWind(onGust?: (timeline: BlizzardGustTimeline) => void) {
   stopWind(true);
   currentWind = createWind(onGust);
 }
@@ -44,7 +48,9 @@ function getNoiseBuffer(): AudioBuffer | null {
   return buffer;
 }
 
-export function createWind(onGust?: (duration: number) => void): WindHandle {
+export function createWind(
+  onGust?: (timeline: BlizzardGustTimeline) => void,
+): WindHandle {
   let stopped = false;
   let isMuted = false;
   let cleanup: ((immediate?: boolean) => void) | null = null;
@@ -144,9 +150,9 @@ export function createWind(onGust?: (duration: number) => void): WindHandle {
     whiteoutFn = (t: number) => {
       if (stopped || isMuted) return;
       const now = ctx.currentTime;
-      masterGain.gain.setTargetAtTime(0.3 + t * 0.25, now, 0.3);
-      howlBP.frequency.setTargetAtTime(400 + t * 200, now, 0.3);
-      howlGain.gain.setTargetAtTime(0.15 + t * 0.1, now, 0.3);
+      masterGain.gain.setTargetAtTime(0.3 + t * 0.25, now, 0.05);
+      howlBP.frequency.setTargetAtTime(400 + t * 200, now, 0.05);
+      howlGain.gain.setTargetAtTime(0.15 + t * 0.1, now, 0.05);
     };
 
     // Mute control: fade volume without destroying the audio graph
@@ -171,8 +177,11 @@ export function createWind(onGust?: (duration: number) => void): WindHandle {
         if (stopped) return;
 
         const t = ctx.currentTime;
-        const dur = 1.0 + Math.random() * 1.5;
-        onGust?.(dur);
+        const timeline = createBlizzardGustTimeline();
+        const attackEnd = t + timeline.attackDuration;
+        const releaseStart = attackEnd + timeline.peakDuration;
+        const gustEnd = t + timeline.totalDuration;
+        onGust?.(timeline);
 
         const gustSrc = ctx.createBufferSource();
         gustSrc.buffer = buffer;
@@ -180,21 +189,25 @@ export function createWind(onGust?: (duration: number) => void): WindHandle {
         gustBP.type = "bandpass";
         // Sweep from low to high during the gust
         gustBP.frequency.setValueAtTime(200 + Math.random() * 200, t);
-        gustBP.frequency.linearRampToValueAtTime(600 + Math.random() * 400, t + dur * 0.6);
-        gustBP.frequency.linearRampToValueAtTime(300 + Math.random() * 200, t + dur);
+        const peakFrequency = 600 + Math.random() * 400;
+        gustBP.frequency.linearRampToValueAtTime(peakFrequency, attackEnd);
+        gustBP.frequency.setValueAtTime(peakFrequency, releaseStart);
+        gustBP.frequency.linearRampToValueAtTime(300 + Math.random() * 200, gustEnd);
         gustBP.Q.value = 2.5 + Math.random() * 2;
         const gustGain = ctx.createGain();
+        const peakGain = 0.08 + Math.random() * 0.04;
         gustGain.gain.setValueAtTime(0, t);
-        gustGain.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.04, t + dur * 0.3);
-        gustGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        gustGain.gain.linearRampToValueAtTime(peakGain, attackEnd);
+        gustGain.gain.setValueAtTime(peakGain, releaseStart);
+        gustGain.gain.exponentialRampToValueAtTime(0.001, gustEnd);
         gustSrc.connect(gustBP);
         gustBP.connect(gustGain);
         gustGain.connect(masterGain);
         gustSrc.start(t);
-        gustSrc.stop(t + dur);
+        gustSrc.stop(gustEnd);
 
-        // Schedule next gust
-        scheduleGust();
+        // Wait until this gust ends before scheduling the next quiet interval.
+        gustTimer = setTimeout(scheduleGust, timeline.totalDuration * 1000);
       }, delay * 1000);
     }
 

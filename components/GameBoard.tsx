@@ -19,6 +19,7 @@ import { useTheme, type Theme } from "@/hooks/useTheme";
 import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
 import { setMasterVolume } from "@/lib/sounds";
+import { markRendererStartupStage } from "@/lib/rendererStartupDiagnostics";
 
 interface GameBoardProps {
   onRendererReady?: () => void;
@@ -39,6 +40,11 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   const setVolume = useSettingsStore((s) => s.setVolume);
   const setVolumePreview = useSettingsStore((s) => s.setVolumePreview);
   const clearVolumePreview = useSettingsStore((s) => s.clearVolumePreview);
+
+  useEffect(() => {
+    markRendererStartupStage("gameboard-mounted");
+    markRendererStartupStage("canvas-render-started");
+  }, []);
 
   useEffect(() => {
     setMasterVolume(volumePreview ?? volume);
@@ -111,7 +117,10 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   );
 
   return (
-    <div className="relative w-full h-screen bg-background">
+    <div
+      className="relative w-full h-screen bg-background"
+      data-game-renderer-root
+    >
       {/* 计时进度条 */}
       {game.gameState === "playing" && (
         <TimerBar timeLeftRef={game.timeLeftRef} duration={settings.duration} />
@@ -147,10 +156,12 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
           open={settings.showSettings}
           onCancel={cancelSettings}
           onSave={saveSettings}
-          tempSensitivity={settings.tempSensitivity}
+          tempSensitivityMode={settings.tempSensitivityMode}
+          tempSensitivities={settings.tempSensitivities}
           tempGridSize={settings.tempGridSize}
           tempDuration={settings.tempDuration}
           setTempSensitivity={settings.setTempSensitivity}
+          setTempSensitivityMode={settings.setTempSensitivityMode}
           setTempGridSize={settings.setTempGridSize}
           setTempDuration={settings.setTempDuration}
           tempTargetSize={settings.tempTargetSize}
@@ -183,7 +194,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       {theme === "blizzard" && (
         <div
           className="absolute inset-0 z-10 pointer-events-none"
-          style={{ backgroundColor: "rgba(255,255,255,0.15)", opacity: "var(--whiteout, 0)" }}
+          style={{ backgroundColor: "rgba(190,196,205,0.08)", opacity: "var(--whiteout, 0)" }}
         />
       )}
 
