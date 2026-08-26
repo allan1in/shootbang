@@ -45,6 +45,8 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const countdownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleClickRef = useRef<() => void>(() => {});
   const pointerInputModeRef = useRef<PointerInputMode>("none");
+  const pointerLockRequestIdRef = useRef(0);
+  const pointerLockRequestCleanupRef = useRef<(() => void) | null>(null);
 
   const hitsRef = useRef(0);
   const shotsRef = useRef(0);
@@ -177,8 +179,17 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       const container = containerRef.current;
       if (!container) return;
 
+      pointerLockRequestCleanupRef.current?.();
+      const requestId = ++pointerLockRequestIdRef.current;
       pointerInputModeRef.current = "none";
+      let completed = false;
+
+      const isCurrentRequest = () =>
+        pointerLockRequestIdRef.current === requestId;
+
       const completeLock = (inputMode: Exclude<PointerInputMode, "none">) => {
+        if (completed || !isCurrentRequest()) return;
+        completed = true;
         pointerInputModeRef.current = inputMode;
         onLocked();
         startCountdown();
@@ -186,17 +197,93 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         toast.info("按 Esc 退出瞄准模式");
       };
 
-      container
-        .requestPointerLock({ unadjustedMovement: true })
+      const requestPointerLock = (options?: PointerLockOptions) =>
+        new Promise<void>((resolve, reject) => {
+          let settled = false;
+
+          const cleanup = () => {
+            document.removeEventListener(
+              "pointerlockchange",
+              handlePointerLockChange,
+            );
+            document.removeEventListener("pointerlockerror", handlePointerLockError);
+            if (pointerLockRequestCleanupRef.current === cleanup) {
+              pointerLockRequestCleanupRef.current = null;
+            }
+          };
+
+          const settle = (callback: () => void) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            callback();
+          };
+
+          const handlePointerLockChange = () => {
+            if (document.pointerLockElement === container) {
+              settle(resolve);
+            } else {
+              settle(() =>
+                reject(
+                  new DOMException(
+                    "Pointer lock was not acquired",
+                    "NotAllowedError",
+                  ),
+                ),
+              );
+            }
+          };
+
+          const handlePointerLockError = () => {
+            settle(() =>
+              reject(
+                new DOMException(
+                  "Pointer lock request failed",
+                  "NotAllowedError",
+                ),
+              ),
+            );
+          };
+
+          document.addEventListener(
+            "pointerlockchange",
+            handlePointerLockChange,
+          );
+          document.addEventListener("pointerlockerror", handlePointerLockError);
+          pointerLockRequestCleanupRef.current = cleanup;
+
+          try {
+            const result = container.requestPointerLock(options) as
+              | Promise<void>
+              | void;
+            if (result) {
+              void Promise.resolve(result).catch((error: unknown) => {
+                settle(() => reject(error));
+              });
+            }
+          } catch (error) {
+            settle(() => reject(error));
+          }
+        });
+
+      void requestPointerLock({ unadjustedMovement: true })
         .then(() => completeLock("raw"))
         .catch(() => {
-          container
-            .requestPointerLock()
+          if (!isCurrentRequest()) return;
+          void requestPointerLock()
             .then(() => completeLock("standard"))
             .catch(() => {});
         });
     },
     [startCountdown, containerRef],
+  );
+
+  useEffect(
+    () => () => {
+      pointerLockRequestIdRef.current += 1;
+      pointerLockRequestCleanupRef.current?.();
+    },
+    [],
   );
 
   const triggerStart = useCallback(() => {

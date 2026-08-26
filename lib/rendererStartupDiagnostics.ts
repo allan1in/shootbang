@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-export const RENDERER_STARTUP_MONITOR_VERSION = "renderer-startup-v2";
+export const RENDERER_STARTUP_MONITOR_VERSION = "renderer-startup-v3";
 
 export type RendererStartupStage =
   | "startup-started"
@@ -15,9 +15,12 @@ export type RendererStartupStage =
 
 export type RendererStartupFailureStage =
   | "webgl2-check"
-  | "renderer-timeout"
   | "gameboard-import"
   | "react-render";
+
+export type RendererStartupSlowStage =
+  | "gameboard-import-slow"
+  | "renderer-creation-slow";
 
 export interface WebGLStartupDiagnostics {
   hasWebGL2Constructor: boolean;
@@ -45,6 +48,7 @@ interface LifecycleState {
   blurCount: number;
   hiddenDurationMs: number;
   unfocusedDurationMs: number;
+  visibleDurationMs: number;
   activeDurationMs: number;
   lastUpdatedAt: number;
 }
@@ -53,6 +57,7 @@ export interface RendererStartupDiagnosticsSnapshot {
   monitorVersion: typeof RENDERER_STARTUP_MONITOR_VERSION;
   attemptId: string;
   elapsedMs: number;
+  visibleElapsedMs: number;
   activeElapsedMs: number;
   lastCompletedStage: RendererStartupStage;
   stages: Partial<Record<RendererStartupStage, number>>;
@@ -66,6 +71,7 @@ export interface RendererStartupDiagnosticsSnapshot {
     blurCount: number;
     hiddenDurationMs: number;
     unfocusedDurationMs: number;
+    visibleDurationMs: number;
   };
   rendererState: {
     rootExists: boolean;
@@ -106,8 +112,11 @@ interface RendererStartupAttempt {
   webgl?: WebGLStartupDiagnostics;
   failure?: StartupFailureDetails;
   reported: boolean;
+  slowReportedStages: Set<RendererStartupSlowStage>;
   removeLifecycleListeners?: () => void;
 }
+
+type RendererStartupStageListener = (stage: RendererStartupStage) => void;
 
 interface NavigatorWithDiagnostics extends Navigator {
   connection?: {
@@ -120,6 +129,7 @@ interface NavigatorWithDiagnostics extends Navigator {
 }
 
 let currentAttempt: RendererStartupAttempt | null = null;
+const stageListeners = new Set<RendererStartupStageListener>();
 
 function now() {
   return typeof performance === "undefined" ? Date.now() : performance.now();
@@ -165,6 +175,9 @@ function updateLifecycleDurations(
   }
   if (!lifecycle.focused) {
     lifecycle.unfocusedDurationMs += duration;
+  }
+  if (lifecycle.visibility === "visible") {
+    lifecycle.visibleDurationMs += duration;
   }
   if (lifecycle.visibility === "visible" && lifecycle.focused) {
     lifecycle.activeDurationMs += duration;
@@ -242,10 +255,12 @@ export function startRendererStartupAttempt() {
       blurCount: 0,
       hiddenDurationMs: 0,
       unfocusedDurationMs: 0,
+      visibleDurationMs: 0,
       activeDurationMs: 0,
       lastUpdatedAt: startedAt,
     },
     reported: false,
+    slowReportedStages: new Set(),
   };
 
   currentAttempt = attempt;
@@ -273,6 +288,30 @@ export function markRendererStartupStage(stage: RendererStartupStage) {
     message: stage,
     data: { elapsed_ms: elapsedMs },
   });
+  stageListeners.forEach((listener) => listener(stage));
+}
+
+export function subscribeRendererStartupStages(
+  listener: RendererStartupStageListener,
+) {
+  stageListeners.add(listener);
+  return () => {
+    stageListeners.delete(listener);
+  };
+}
+
+export function getRendererStartupSlowStage(
+  stage: RendererStartupStage,
+): RendererStartupSlowStage | null {
+  if (stage === "renderer-created") return null;
+  if (
+    stage === "gameboard-import-completed" ||
+    stage === "gameboard-mounted" ||
+    stage === "canvas-render-started"
+  ) {
+    return "renderer-creation-slow";
+  }
+  return "gameboard-import-slow";
 }
 
 export function recordWebGLStartupDiagnostics(
@@ -370,6 +409,7 @@ export function getRendererStartupDiagnosticsSnapshot(): RendererStartupDiagnost
     monitorVersion: RENDERER_STARTUP_MONITOR_VERSION,
     attemptId: attempt.attemptId,
     elapsedMs: roundMs(timestamp - attempt.startedAt),
+    visibleElapsedMs: roundMs(lifecycle.visibleDurationMs),
     activeElapsedMs: roundMs(lifecycle.activeDurationMs),
     lastCompletedStage: attempt.lastCompletedStage,
     stages: { ...attempt.stages },
@@ -384,6 +424,7 @@ export function getRendererStartupDiagnosticsSnapshot(): RendererStartupDiagnost
       blurCount: lifecycle.blurCount,
       hiddenDurationMs: roundMs(lifecycle.hiddenDurationMs),
       unfocusedDurationMs: roundMs(lifecycle.unfocusedDurationMs),
+      visibleDurationMs: roundMs(lifecycle.visibleDurationMs),
     },
     rendererState: {
       rootExists:
@@ -427,6 +468,16 @@ export function claimRendererStartupFailureReport(
 
   markRendererStartupFailure(stage, error);
   attempt.reported = true;
+  return getRendererStartupDiagnosticsSnapshot();
+}
+
+export function claimRendererStartupSlowReport(
+  stage: RendererStartupSlowStage,
+) {
+  const attempt = currentAttempt;
+  if (!attempt || attempt.slowReportedStages.has(stage)) return null;
+
+  attempt.slowReportedStages.add(stage);
   return getRendererStartupDiagnosticsSnapshot();
 }
 

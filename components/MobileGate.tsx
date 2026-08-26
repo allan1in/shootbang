@@ -7,17 +7,22 @@ import { useWebGLSupport } from "@/hooks/useWebGLSupport";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MobilePrompt } from "@/components/MobilePrompt";
 import {
-  getRendererInitializationTimeoutMs,
+  getRendererSlowThresholdMs,
   installRendererStartupTestAccess,
+  reportRendererStartupSlow,
   reportWebGLStartupFailure,
   shouldSuppressRendererReadyForTest,
+  waitForGameBoardImportTestRelease,
 } from "@/lib/webglSupport";
 import {
   abortRendererStartupAttempt,
   finishRendererStartupAttempt,
+  getRendererStartupSlowStage,
   markRendererStartupFailure,
   markRendererStartupStage,
   startRendererStartupAttempt,
+  subscribeRendererStartupStages,
+  type RendererStartupStage,
 } from "@/lib/rendererStartupDiagnostics";
 
 // 动态导入：移动端只渲染提示语，不下载 three.js/tone.js 等游戏依赖
@@ -25,6 +30,7 @@ const GameBoard = dynamic(
   async () => {
     markRendererStartupStage("gameboard-import-started");
     try {
+      await waitForGameBoardImportTestRelease();
       const gameBoardModule = await import("@/components/GameBoard");
       markRendererStartupStage("gameboard-import-completed");
       return gameBoardModule;
@@ -41,6 +47,11 @@ const GameBoard = dynamic(
 
 export function MobileGate() {
   const { isMobile, ready } = useMobileDetect();
+  const [rendererReady, setRendererReady] = useState(false);
+  const [rendererSlow, setRendererSlow] = useState(false);
+  const [startupStage, setStartupStage] =
+    useState<RendererStartupStage>("startup-started");
+
   useEffect(() => {
     if (!ready || isMobile) return;
 
@@ -50,16 +61,25 @@ export function MobileGate() {
     return abortRendererStartupAttempt;
   }, [isMobile, ready]);
 
-  const webGLStatus = useWebGLSupport(ready && !isMobile);
-  const [rendererReady, setRendererReady] = useState(false);
-  const [rendererTimedOut, setRendererTimedOut] = useState(false);
+  useEffect(() => subscribeRendererStartupStages(setStartupStage), []);
 
-  const handleRendererReady = useCallback(() => {
-    if (shouldSuppressRendererReadyForTest()) return;
+  const webGLStatus = useWebGLSupport(ready && !isMobile);
+
+  const completeRendererStartup = useCallback(() => {
     markRendererStartupStage("renderer-created");
     finishRendererStartupAttempt();
     setRendererReady(true);
   }, []);
+
+  const handleRendererReady = useCallback(() => {
+    if (shouldSuppressRendererReadyForTest()) return;
+    completeRendererStartup();
+  }, [completeRendererStartup]);
+
+  useEffect(() => {
+    if (!ready || isMobile) return;
+    installRendererStartupTestAccess(completeRendererStartup);
+  }, [completeRendererStartup, isMobile, ready]);
 
   useEffect(() => {
     if (webGLStatus !== "unsupported") return;
@@ -68,19 +88,57 @@ export function MobileGate() {
 
   useEffect(() => {
     if (webGLStatus !== "supported" || rendererReady) return;
+    const slowStage = getRendererStartupSlowStage(startupStage);
+    if (!slowStage) return;
 
-    const timeoutId = window.setTimeout(() => {
-      reportWebGLStartupFailure("renderer-timeout");
-      setRendererTimedOut(true);
-    }, getRendererInitializationTimeoutMs());
+    let remainingMs = getRendererSlowThresholdMs(slowStage);
+    let visibleStartedAt = 0;
+    let timeoutId: number | null = null;
+    let reported = false;
 
-    return () => window.clearTimeout(timeoutId);
-  }, [rendererReady, webGLStatus]);
+    const pause = () => {
+      if (timeoutId === null) return;
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+      remainingMs = Math.max(0, remainingMs - (performance.now() - visibleStartedAt));
+    };
+
+    const start = () => {
+      if (
+        reported ||
+        timeoutId !== null ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+
+      visibleStartedAt = performance.now();
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        reported = true;
+        reportRendererStartupSlow(slowStage);
+        setRendererSlow(true);
+      }, remainingMs);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") start();
+      else pause();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    start();
+
+    return () => {
+      pause();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [rendererReady, startupStage, webGLStatus]);
 
   if (!ready) return <LoadingScreen />;
   if (isMobile) return <MobilePrompt />;
   if (webGLStatus === "checking") return <LoadingScreen />;
-  if (webGLStatus === "unsupported" || rendererTimedOut) {
+  if (webGLStatus === "unsupported") {
     return <LoadingScreen status="failed" />;
   }
 
@@ -94,7 +152,7 @@ export function MobileGate() {
       </div>
       {!rendererReady && (
         <div className="absolute inset-0">
-          <LoadingScreen />
+          <LoadingScreen status={rendererSlow ? "slow" : "loading"} />
         </div>
       )}
     </div>

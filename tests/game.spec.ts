@@ -90,9 +90,11 @@ type WebGL2FailureMode = "unavailable" | "throws";
 
 interface RendererStartupDiagnosticReport {
   stage: string;
+  fingerprint?: string[];
   snapshot: {
     monitorVersion: string;
     elapsedMs: number;
+    visibleElapsedMs: number;
     lastCompletedStage: string;
     stages: Record<string, number>;
     failure?: { stage: string; errorName?: string; errorMessage?: string };
@@ -102,6 +104,7 @@ interface RendererStartupDiagnosticReport {
       online: boolean;
       hiddenCount: number;
       blurCount: number;
+      visibleDurationMs: number;
     };
     rendererState: {
       rootExists: boolean;
@@ -148,23 +151,89 @@ async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
 
 async function configureWebGLStartupTest(
   page: Page,
-  options: { rendererTimeoutMs?: number; suppressRendererReady?: boolean } = {},
+  options: {
+    rendererSlowThresholdMs?: number;
+    gameBoardImportSlowThresholdMs?: number;
+    rendererCreationSlowThresholdMs?: number;
+    suppressRendererReady?: boolean;
+    holdGameBoardImport?: boolean;
+  } = {},
 ) {
   await page.addInitScript((testOptions) => {
     const state = window as typeof window & {
       __shootbang_webgl_test?: {
-        rendererTimeoutMs?: number;
+        rendererSlowThresholdMs?: number;
+        gameBoardImportSlowThresholdMs?: number;
+        rendererCreationSlowThresholdMs?: number;
         suppressRendererReady?: boolean;
+        holdGameBoardImport?: boolean;
         reportedStages?: string[];
         diagnosticReports?: RendererStartupDiagnosticReport[];
+        reportedSlowStages?: string[];
+        slowDiagnosticReports?: RendererStartupDiagnosticReport[];
+        completeRendererStartup?: () => void;
+        releaseGameBoardImport?: () => void;
       };
     };
     state.__shootbang_webgl_test = {
       ...testOptions,
       reportedStages: [],
       diagnosticReports: [],
+      reportedSlowStages: [],
+      slowDiagnosticReports: [],
     };
   }, options);
+}
+
+async function getRendererStartupSlowDiagnosticReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: {
+        slowDiagnosticReports?: RendererStartupDiagnosticReport[];
+      };
+    };
+    return state.__shootbang_webgl_test?.slowDiagnosticReports ?? [];
+  });
+}
+
+async function getRendererStartupSlowReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: { reportedSlowStages?: string[] };
+    };
+    return state.__shootbang_webgl_test?.reportedSlowStages ?? [];
+  });
+}
+
+async function completeRendererStartup(page: Page) {
+  await page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: { completeRendererStartup?: () => void };
+    };
+    state.__shootbang_webgl_test?.completeRendererStartup?.();
+  });
+}
+
+async function releaseGameBoardImport(page: Page) {
+  await page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: { releaseGameBoardImport?: () => void };
+    };
+    state.__shootbang_webgl_test?.releaseGameBoardImport?.();
+  });
+}
+
+async function setPageVisibility(
+  page: Page,
+  visibilityState: "visible" | "hidden",
+) {
+  await page.evaluate((state) => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => state,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, visibilityState);
 }
 
 async function getWebGLStartupDiagnosticReports(page: Page) {
@@ -187,18 +256,48 @@ async function getWebGLStartupReports(page: Page) {
   });
 }
 
-type PointerLockMockMode = "raw" | "fallback" | "fail";
+type PointerLockMockMode =
+  | "raw"
+  | "raw-void"
+  | "fallback"
+  | "fallback-void"
+  | "fail";
 
 async function mockPointerLock(page: Page, mode: PointerLockMockMode) {
   await page.addInitScript((mockMode) => {
     const state = window as typeof window & {
       __shootbangPointerLockRequests?: ({ unadjustedMovement?: boolean } | null)[];
+      __shootbangPointerLockElement?: Element | null;
     };
     state.__shootbangPointerLockRequests = [];
+    state.__shootbangPointerLockElement = null;
+    Object.defineProperty(Document.prototype, "pointerLockElement", {
+      configurable: true,
+      get: () => state.__shootbangPointerLockElement ?? null,
+    });
     Element.prototype.requestPointerLock = function (options?: { unadjustedMovement?: boolean }) {
       state.__shootbangPointerLockRequests!.push(options ?? null);
-      if (mockMode === "raw" || (mockMode === "fallback" && !options?.unadjustedMovement)) {
-        return Promise.resolve();
+      const rawRequest = options?.unadjustedMovement === true;
+      const succeeds =
+        (rawRequest && (mockMode === "raw" || mockMode === "raw-void")) ||
+        (!rawRequest &&
+          (mockMode === "fallback" || mockMode === "fallback-void"));
+
+      if (succeeds) {
+        state.__shootbangPointerLockElement = this;
+        queueMicrotask(() =>
+          document.dispatchEvent(new Event("pointerlockchange")),
+        );
+        return mockMode.endsWith("-void")
+          ? (undefined as unknown as Promise<void>)
+          : Promise.resolve();
+      }
+
+      if (mockMode === "fallback-void" && rawRequest) {
+        queueMicrotask(() =>
+          document.dispatchEvent(new Event("pointerlockerror")),
+        );
+        return undefined as unknown as Promise<void>;
       }
       return Promise.reject(new DOMException("Pointer lock unavailable", "NotSupportedError"));
     };
@@ -293,6 +392,49 @@ test.describe("Pointer Lock 原始鼠标输入", () => {
     await expect(page.getByText("按 Esc 退出瞄准模式", { exact: true }).last()).toBeVisible();
   });
 
+  test("兼容返回 void 的 Firefox 和 Safari Pointer Lock", async ({ page }) => {
+    await mockPointerLock(page, "raw-void");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const api = (window as unknown as Record<string, unknown>)
+            .__shootbang_test as ShootbangTestAPI;
+          return api.getPointerInputMode();
+        }),
+      )
+      .toBe("raw");
+    expect(await getPointerLockRequests(page)).toEqual([
+      { unadjustedMovement: true },
+    ]);
+  });
+
+  test("void 返回的原始输入失败时仍只回退一次", async ({ page }) => {
+    await mockPointerLock(page, "fallback-void");
+    await page.goto("/");
+    await waitForCanvas(page);
+
+    await page.getByRole("button", { name: "开始" }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const api = (window as unknown as Record<string, unknown>)
+            .__shootbang_test as ShootbangTestAPI;
+          return api.getPointerInputMode();
+        }),
+      )
+      .toBe("standard");
+    expect(await getPointerLockRequests(page)).toEqual([
+      { unadjustedMovement: true },
+      null,
+    ]);
+  });
+
   test("两次锁定失败时不启动游戏或显示提示", async ({ page }) => {
     await mockPointerLock(page, "fail");
     await page.goto("/");
@@ -316,7 +458,13 @@ test.describe("Pointer Lock 原始鼠标输入", () => {
       return api.getPointerInputMode();
     })).toBe("raw");
 
-    await page.evaluate(() => document.dispatchEvent(new Event("pointerlockchange")));
+    await page.evaluate(() => {
+      const state = window as typeof window & {
+        __shootbangPointerLockElement?: Element | null;
+      };
+      state.__shootbangPointerLockElement = null;
+      document.dispatchEvent(new Event("pointerlockchange"));
+    });
     await expect.poll(() => page.evaluate(() => {
       const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
       return api.getPointerInputMode();
@@ -983,7 +1131,7 @@ test.describe("WebGL 启动兜底", () => {
     ]);
     const [report] = await getWebGLStartupDiagnosticReports(page);
     expect(report.stage).toBe("webgl2-check");
-    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v3");
     expect(report.snapshot.lastCompletedStage).toBe(
       "webgl2-check-completed",
     );
@@ -1021,37 +1169,111 @@ test.describe("WebGL 启动兜底", () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test("Renderer 初始化超时后停止等待并显示失败提示", async ({ page }) => {
+  test("Renderer 初始化较慢时继续加载并在恢复后进入首页", async ({ page }) => {
     await configureWebGLStartupTest(page, {
-      rendererTimeoutMs: 50,
+      gameBoardImportSlowThresholdMs: 10_000,
+      rendererCreationSlowThresholdMs: 50,
       suppressRendererReady: true,
     });
 
     await page.goto("/");
 
     await expect(
-      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
+      page.getByText("加载时间较长，请稍候…", {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(0);
-    await expect.poll(() => getWebGLStartupReports(page)).toEqual([
-      "renderer-timeout",
+    await expect(page.locator("canvas")).toHaveCount(1);
+    await expect(
+      page.getByText("加载失败，请刷新页面，或使用最新版 Chrome 或 Edge 浏览器重试", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect.poll(() => getRendererStartupSlowReports(page)).toEqual([
+      "renderer-creation-slow",
     ]);
-    const [report] = await getWebGLStartupDiagnosticReports(page);
-    expect(report.stage).toBe("renderer-timeout");
-    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v2");
-    expect([
-      "gameboard-import-started",
-      "gameboard-import-completed",
-      "gameboard-mounted",
-      "canvas-render-started",
-    ]).toContain(report.snapshot.lastCompletedStage);
-    expect(report.snapshot.failure?.stage).toBe("renderer-timeout");
-    expect(report.snapshot.elapsedMs).toBeGreaterThanOrEqual(50);
+    const [report] = await getRendererStartupSlowDiagnosticReports(page);
+    expect(report.stage).toBe("renderer-creation-slow");
+    expect(report.fingerprint).toEqual([
+      "shootbang-renderer-startup-slow-v1",
+      "renderer-creation-slow",
+    ]);
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v3");
+    expect(report.snapshot.lastCompletedStage).toBe("canvas-render-started");
+    expect(report.snapshot.failure).toBeUndefined();
+    expect(report.snapshot.visibleElapsedMs).toBeGreaterThanOrEqual(50);
     expect(report.snapshot.webgl?.contextCreated).toBe(true);
     expect(report.snapshot.rendererState.rendererCreated).toBe(false);
     expect(report.snapshot.resources.scriptCount).toBeGreaterThan(0);
+
+    await page.waitForTimeout(100);
+    expect(await getRendererStartupSlowReports(page)).toEqual([
+      "renderer-creation-slow",
+    ]);
+
+    await completeRendererStartup(page);
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
+    await expect(page.getByText("加载时间较长，请稍候…")).toHaveCount(0);
+  });
+
+  test("GameBoard 动态导入较慢时单独分类且不会阻止后续加载", async ({ page }) => {
+    await configureWebGLStartupTest(page, {
+      rendererSlowThresholdMs: 50,
+      holdGameBoardImport: true,
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByText("加载时间较长，请稍候…")).toBeVisible();
+    await expect.poll(() => getRendererStartupSlowReports(page)).toEqual([
+      "gameboard-import-slow",
+    ]);
+    const [report] = await getRendererStartupSlowDiagnosticReports(page);
+    expect(report.stage).toBe("gameboard-import-slow");
+    expect(report.fingerprint).toEqual([
+      "shootbang-renderer-startup-slow-v1",
+      "gameboard-import-slow",
+    ]);
+    expect(report.snapshot.lastCompletedStage).toBe("gameboard-import-started");
+    expect(report.snapshot.failure).toBeUndefined();
+
+    await releaseGameBoardImport(page);
+    await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
+  });
+
+  test("页面隐藏时暂停慢加载计时，恢复可见后继续", async ({ page }) => {
+    await configureWebGLStartupTest(page, {
+      gameBoardImportSlowThresholdMs: 10_000,
+      rendererCreationSlowThresholdMs: 200,
+      suppressRendererReady: true,
+    });
+    await page.goto("/");
+    await expect(page.locator("canvas")).toHaveCount(1);
+
+    await setPageVisibility(page, "hidden");
+    await page.waitForTimeout(300);
+    expect(await getRendererStartupSlowReports(page)).toEqual([]);
+
+    await setPageVisibility(page, "visible");
+    await expect(page.getByText("加载时间较长，请稍候…")).toBeVisible();
+  });
+
+  test("窗口失焦但页面可见时仍累计慢加载时间", async ({ page }) => {
+    await page.addInitScript(() => {
+      Document.prototype.hasFocus = () => false;
+    });
+    await configureWebGLStartupTest(page, {
+      gameBoardImportSlowThresholdMs: 10_000,
+      rendererCreationSlowThresholdMs: 50,
+      suppressRendererReady: true,
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByText("加载时间较长，请稍候…")).toBeVisible();
+    const [report] = await getRendererStartupSlowDiagnosticReports(page);
+    expect(report.snapshot.pageLifecycle.focused).toBe(false);
+    expect(report.snapshot.visibleElapsedMs).toBeGreaterThanOrEqual(50);
   });
 
   test.describe("移动设备优先级", () => {
@@ -1102,6 +1324,26 @@ test.describe("懒加载", () => {
       await page.setViewportSize({ width: 1280, height: 720 });
       await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
       await expect(page.locator("canvas")).not.toBeVisible();
+    });
+  });
+
+  test.describe("平板 UA", () => {
+    test.use({
+      userAgent:
+        "Mozilla/5.0 AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36 VivoBrowser/22.4 DeviceType/tablet",
+      viewport: { width: 1239, height: 826 },
+    });
+
+    test("通用 Tablet 标识直接显示 PC 提示且不加载游戏模块", async ({ page }) => {
+      await mockScreenSize(page, 1239, 826);
+      await configureWebGLStartupTest(page);
+      await mockWebGL2Failure(page, "throws");
+
+      await page.goto("/");
+
+      await expect(page.getByText("请使用 PC 端访问")).toBeVisible();
+      expect(await getWebGLStartupReports(page)).toEqual([]);
+      expect(await page.evaluate(() => "__shootbang_test" in window)).toBe(false);
     });
   });
 

@@ -2,7 +2,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TriangleAlert } from "lucide-react";
 
 interface LoadingScreenProps {
-  status?: "loading" | "failed";
+  status?: "loading" | "slow" | "failed";
 }
 
 export function LoadingScreen({ status = "loading" }: LoadingScreenProps) {
@@ -30,7 +30,9 @@ export function LoadingScreen({ status = "loading" }: LoadingScreenProps) {
           ) : (
             <>
               <Spinner aria-hidden="true" />
-              <span>加载中…</span>
+              <span>
+                {status === "slow" ? "加载时间较长，请稍候…" : "加载中…"}
+              </span>
             </>
           )}
         </div>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 
-const MOBILE_USER_AGENT_PATTERN = /Android|iPhone|iPad|iPod|Mobile/i;
+const MOBILE_USER_AGENT_PATTERN =
+  /Android|iPhone|iPad|iPod|Mobile|Tablet/i;
 const SMALL_DEVICE_SHORT_EDGE_BREAKPOINT = 600;
 
 interface NavigatorWithUserAgentData extends Navigator {
