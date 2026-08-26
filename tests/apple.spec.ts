@@ -50,8 +50,14 @@ test.describe("macOS Safari（WebKit）", () => {
     await page.addInitScript(() => {
       const state = window as typeof window & {
         __applePointerLockRequests?: Array<"raw" | "standard">;
+        __applePointerLockElement?: Element | null;
       };
       state.__applePointerLockRequests = [];
+      state.__applePointerLockElement = null;
+      Object.defineProperty(Document.prototype, "pointerLockElement", {
+        configurable: true,
+        get: () => state.__applePointerLockElement ?? null,
+      });
 
       Element.prototype.requestPointerLock = function (
         options?: PointerLockOptions,
@@ -65,6 +71,10 @@ test.describe("macOS Safari（WebKit）", () => {
           );
         }
 
+        state.__applePointerLockElement = this;
+        queueMicrotask(() =>
+          document.dispatchEvent(new Event("pointerlockchange")),
+        );
         return Promise.resolve();
       };
     });

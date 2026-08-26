@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import type { Context, Contexts } from "@sentry/nextjs";
 import {
+  claimRendererStartupSlowReport,
   claimRendererStartupFailureReport,
   finishRendererStartupAttempt,
   getRendererStartupDiagnosticsSnapshot,
@@ -10,6 +11,7 @@ import {
   sanitizeRendererStartupText,
   type RendererStartupDiagnosticsSnapshot,
   type RendererStartupFailureStage,
+  type RendererStartupSlowStage,
   type WebGLStartupDiagnostics,
 } from "@/lib/rendererStartupDiagnostics";
 
@@ -20,12 +22,25 @@ interface WebGLStartupTestReport {
   snapshot: RendererStartupDiagnosticsSnapshot;
 }
 
+interface RendererStartupSlowTestReport {
+  stage: RendererStartupSlowStage;
+  snapshot: RendererStartupDiagnosticsSnapshot;
+  fingerprint: string[];
+}
+
 interface WebGLTestControls {
-  rendererTimeoutMs?: number;
+  rendererSlowThresholdMs?: number;
+  gameBoardImportSlowThresholdMs?: number;
+  rendererCreationSlowThresholdMs?: number;
   suppressRendererReady?: boolean;
+  holdGameBoardImport?: boolean;
   reportedStages?: RendererStartupFailureStage[];
   diagnosticReports?: WebGLStartupTestReport[];
+  reportedSlowStages?: RendererStartupSlowStage[];
+  slowDiagnosticReports?: RendererStartupSlowTestReport[];
   getDiagnostics?: () => RendererStartupDiagnosticsSnapshot | null;
+  completeRendererStartup?: () => void;
+  releaseGameBoardImport?: () => void;
 }
 
 declare global {
@@ -39,7 +54,7 @@ interface WebGLDebugRendererInfo {
   UNMASKED_RENDERER_WEBGL: number;
 }
 
-const DEFAULT_RENDERER_TIMEOUT_MS = 10_000;
+const DEFAULT_RENDERER_SLOW_THRESHOLD_MS = 10_000;
 let cachedWebGL2Support: boolean | null = null;
 let cachedWebGLDiagnostics: WebGLStartupDiagnostics | null = null;
 
@@ -150,15 +165,20 @@ export function detectWebGL2Support() {
   }
 }
 
-export function getRendererInitializationTimeoutMs() {
+export function getRendererSlowThresholdMs(stage: RendererStartupSlowStage) {
   if (process.env.NODE_ENV !== "production") {
+    const stageThreshold =
+      stage === "gameboard-import-slow"
+        ? window.__shootbang_webgl_test?.gameBoardImportSlowThresholdMs
+        : window.__shootbang_webgl_test?.rendererCreationSlowThresholdMs;
     return (
-      window.__shootbang_webgl_test?.rendererTimeoutMs ??
-      DEFAULT_RENDERER_TIMEOUT_MS
+      stageThreshold ??
+      window.__shootbang_webgl_test?.rendererSlowThresholdMs ??
+      DEFAULT_RENDERER_SLOW_THRESHOLD_MS
     );
   }
 
-  return DEFAULT_RENDERER_TIMEOUT_MS;
+  return DEFAULT_RENDERER_SLOW_THRESHOLD_MS;
 }
 
 export function shouldSuppressRendererReadyForTest() {
@@ -168,7 +188,26 @@ export function shouldSuppressRendererReadyForTest() {
   );
 }
 
-export function installRendererStartupTestAccess() {
+export async function waitForGameBoardImportTestRelease() {
+  if (
+    process.env.NODE_ENV === "production" ||
+    window.__shootbang_webgl_test?.holdGameBoardImport !== true
+  ) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    if (!window.__shootbang_webgl_test) {
+      resolve();
+      return;
+    }
+    window.__shootbang_webgl_test.releaseGameBoardImport = resolve;
+  });
+}
+
+export function installRendererStartupTestAccess(
+  completeRendererStartup?: () => void,
+) {
   if (
     process.env.NODE_ENV === "production" ||
     !window.__shootbang_webgl_test
@@ -177,6 +216,8 @@ export function installRendererStartupTestAccess() {
   }
   window.__shootbang_webgl_test.getDiagnostics =
     getRendererStartupDiagnosticsSnapshot;
+  window.__shootbang_webgl_test.completeRendererStartup =
+    completeRendererStartup;
 }
 
 export function createRendererStartupSentryData(
@@ -188,6 +229,7 @@ export function createRendererStartupSentryData(
       attempt_id: snapshot.attemptId,
       monitor_version: snapshot.monitorVersion,
       elapsed_ms: snapshot.elapsedMs,
+      visible_elapsed_ms: snapshot.visibleElapsedMs,
       active_elapsed_ms: snapshot.activeElapsedMs,
       last_completed_stage: snapshot.lastCompletedStage,
       stages: snapshot.stages,
@@ -204,7 +246,7 @@ export function createRendererStartupSentryData(
   };
 
   return {
-    fingerprint: ["shootbang-renderer-startup-v2", stage],
+    fingerprint: ["shootbang-renderer-startup-v3", stage],
     tags: {
       component: "game-render-loop",
       failure_stage: stage,
@@ -217,6 +259,67 @@ export function createRendererStartupSentryData(
     },
     contexts,
   };
+}
+
+export function createRendererStartupSlowSentryData(
+  stage: RendererStartupSlowStage,
+  snapshot: RendererStartupDiagnosticsSnapshot,
+) {
+  const contexts: Contexts = {
+    renderer_startup: {
+      attempt_id: snapshot.attemptId,
+      monitor_version: snapshot.monitorVersion,
+      elapsed_ms: snapshot.elapsedMs,
+      visible_elapsed_ms: snapshot.visibleElapsedMs,
+      active_elapsed_ms: snapshot.activeElapsedMs,
+      last_completed_stage: snapshot.lastCompletedStage,
+      slow_stage: stage,
+      stages: snapshot.stages,
+    },
+    page_lifecycle: { ...snapshot.pageLifecycle } as Context,
+    renderer_state: { ...snapshot.rendererState } as Context,
+    webgl_startup: snapshot.webgl
+      ? ({ ...snapshot.webgl } as Context)
+      : { available: false },
+    device: { ...snapshot.device } as Context,
+    network: { ...snapshot.network } as Context,
+    resources: { ...snapshot.resources } as Context,
+  };
+
+  return {
+    fingerprint: ["shootbang-renderer-startup-slow-v1", stage],
+    tags: {
+      component: "game-render-loop",
+      slow_stage: stage,
+      last_completed_stage: snapshot.lastCompletedStage,
+      page_visibility: snapshot.pageLifecycle.visibility,
+      window_focused: String(snapshot.pageLifecycle.focused),
+      online: String(snapshot.pageLifecycle.online),
+      software_renderer: String(snapshot.webgl?.softwareRenderer ?? false),
+      monitor_version: RENDERER_STARTUP_MONITOR_VERSION,
+    },
+    contexts,
+  };
+}
+
+export function reportRendererStartupSlow(stage: RendererStartupSlowStage) {
+  const snapshot = claimRendererStartupSlowReport(stage);
+  if (!snapshot) return;
+  const sentryData = createRendererStartupSlowSentryData(stage, snapshot);
+
+  if (process.env.NODE_ENV !== "production") {
+    window.__shootbang_webgl_test?.reportedSlowStages?.push(stage);
+    window.__shootbang_webgl_test?.slowDiagnosticReports?.push({
+      stage,
+      snapshot,
+      fingerprint: sentryData.fingerprint,
+    });
+  }
+
+  Sentry.captureMessage("Game renderer initialization is slow", {
+    level: "warning",
+    ...sentryData,
+  });
 }
 
 export function reportWebGLStartupFailure(
