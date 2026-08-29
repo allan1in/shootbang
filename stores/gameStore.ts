@@ -2,9 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { generateGridPositions } from "@/lib/grid";
 import {
-  DEFAULT_SENSITIVITY,
+  DEFAULT_SENSITIVITIES,
   isSensitivityMode,
-  normalizeSensitivity,
+  normalizeSensitivityForMode,
   type SensitivityMode,
   type SensitivityValues,
 } from "@/lib/sensitivity";
@@ -56,13 +56,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function resolveSensitivities(persistedState: unknown): SensitivityValues {
   const persisted = asRecord(persistedState);
   const newSensitivities = asRecord(persisted?.sensitivities);
-  const newCs2 = normalizeSensitivity(newSensitivities?.cs2);
-  const legacyCs2 = normalizeSensitivity(persisted?.sensitivity);
-  const valorant = normalizeSensitivity(newSensitivities?.valorant);
+  const newCs2 = normalizeSensitivityForMode("cs2", newSensitivities?.cs2);
+  const legacyCs2 = normalizeSensitivityForMode("cs2", persisted?.sensitivity);
+  const valorant = normalizeSensitivityForMode(
+    "valorant",
+    newSensitivities?.valorant,
+  );
+  const delta = normalizeSensitivityForMode("delta", newSensitivities?.delta);
 
   return {
-    cs2: newCs2 ?? legacyCs2 ?? DEFAULT_SENSITIVITY,
-    valorant: valorant ?? DEFAULT_SENSITIVITY,
+    cs2: newCs2 ?? legacyCs2 ?? DEFAULT_SENSITIVITIES.cs2,
+    valorant: valorant ?? DEFAULT_SENSITIVITIES.valorant,
+    delta: delta ?? DEFAULT_SENSITIVITIES.delta,
   };
 }
 
@@ -71,8 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       sensitivityMode: "cs2",
       sensitivities: {
-        cs2: DEFAULT_SENSITIVITY,
-        valorant: DEFAULT_SENSITIVITY,
+        ...DEFAULT_SENSITIVITIES,
       },
       gridSize: 3,
       duration: 30,

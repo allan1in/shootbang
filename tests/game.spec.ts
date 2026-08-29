@@ -23,8 +23,8 @@ interface ShootbangTestAPI {
   getTimeLeft: () => number;
   getDuration: () => number;
   getPointerInputMode: () => "none" | "raw" | "standard";
-  getSensitivityMode: () => "cs2" | "valorant";
-  getSensitivities: () => { cs2: number; valorant: number };
+  getSensitivityMode: () => "cs2" | "valorant" | "delta";
+  getSensitivities: () => { cs2: number; valorant: number; delta: number };
   getDegreesPerCount: () => number;
   getRadiansPerCount: () => number;
   applyMouseMovement: (movementX: number, movementY: number) => void;
@@ -483,11 +483,15 @@ test.describe("设置面板", () => {
   });
 
   test("打开设置面板显示灵敏度表单", async ({ page }) => {
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
     await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "训练" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: "体验" })).toHaveAttribute("aria-selected", "false");
     await expect(page.getByText("灵敏度")).toBeVisible();
     await expect(page.getByRole("combobox", { name: "游戏" })).toHaveText("CS2");
+    await expect(input).toHaveValue("1.25");
+    await expect(input).toHaveAttribute("min", "0.1");
+    await expect(input).toHaveAttribute("max", "8");
     await expect(page.getByRole("radio", { name: "默认" })).not.toBeVisible();
   });
 
@@ -503,7 +507,7 @@ test.describe("设置面板", () => {
       return JSON.parse(raw).state;
     });
     expect(saved.sensitivityMode).toBe("cs2");
-    expect(saved.sensitivities).toEqual({ cs2: 3.125, valorant: 1 });
+    expect(saved.sensitivities).toEqual({ cs2: 3.125, valorant: 1, delta: 3 });
     expect(saved).not.toHaveProperty("sensitivity");
   });
 
@@ -515,6 +519,8 @@ test.describe("设置面板", () => {
     await mode.click();
     await page.getByRole("option", { name: "无畏契约" }).click();
     await expect(input).toHaveValue("1");
+    await expect(input).toHaveAttribute("min", "0.01");
+    await expect(input).toHaveAttribute("max", "10");
     await input.fill("0.314");
 
     await mode.click();
@@ -536,7 +542,35 @@ test.describe("设置面板", () => {
       };
     })).toEqual({
       mode: "valorant",
-      values: { cs2: 2.345, valorant: 0.314 },
+      values: { cs2: 2.345, valorant: 0.314, delta: 3 },
+    });
+  });
+
+  test("三角洲行动使用独立默认灵敏度并可保存", async ({ page }) => {
+    const mode = page.getByRole("combobox", { name: "游戏" });
+    const input = page.getByRole("spinbutton", { name: "灵敏度数值" });
+
+    await mode.click();
+    await page.getByRole("option", { name: "三角洲行动" }).click();
+    await expect(input).toHaveValue("3");
+    await expect(input).toHaveAttribute("min", "0.1");
+    await expect(input).toHaveAttribute("max", "50");
+    await input.fill("3.5");
+    await page.getByText("保存").click();
+
+    await page.reload();
+    await waitForCanvas(page);
+    await expect.poll(() => page.evaluate(() => {
+      const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+      return {
+        mode: api.getSensitivityMode(),
+        values: api.getSensitivities(),
+        degreesPerCount: api.getDegreesPerCount(),
+      };
+    })).toEqual({
+      mode: "delta",
+      values: { cs2: 1.25, valorant: 1, delta: 3.5 },
+      degreesPerCount: 0.022,
     });
   });
 
@@ -1029,7 +1063,10 @@ test.describe("灵敏度兼容与转向", () => {
         mode: api.getSensitivityMode(),
         values: api.getSensitivities(),
       };
-    })).toEqual({ mode: "cs2", values: { cs2: 2.5, valorant: 1 } });
+    })).toEqual({
+      mode: "cs2",
+      values: { cs2: 2.5, valorant: 1, delta: 3 },
+    });
   });
 
   test("新版字段优先于旧字段并恢复所选模式", async ({ page }) => {
@@ -1054,7 +1091,7 @@ test.describe("灵敏度兼容与转向", () => {
       };
     })).toEqual({
       mode: "valorant",
-      values: { cs2: 2.125, valorant: 0.314 },
+      values: { cs2: 2.125, valorant: 0.314, delta: 3 },
       duration: 60,
     });
   });
@@ -1074,7 +1111,10 @@ test.describe("灵敏度兼容与转向", () => {
         mode: api.getSensitivityMode(),
         values: api.getSensitivities(),
       };
-    })).toEqual({ mode: "cs2", values: { cs2: 2.75, valorant: 1 } });
+    })).toEqual({
+      mode: "cs2",
+      values: { cs2: 2.75, valorant: 1, delta: 3 },
+    });
   });
 
   test("无畏契约使用精确系数且横纵方向一致并限制 pitch", async ({ page }) => {

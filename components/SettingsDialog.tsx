@@ -24,8 +24,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
 import type { Theme } from "@/hooks/useTheme";
 import {
+  getSensitivityRange,
   isSensitivityMode,
-  normalizeSensitivity,
+  normalizeSensitivityForMode,
   type SensitivityMode,
   type SensitivityValues,
 } from "@/lib/sensitivity";
@@ -78,6 +79,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   const [sensitivityInput, setSensitivityInput] = useState(
     String(tempSensitivities[tempSensitivityMode]),
   );
+  const sensitivityRange = getSensitivityRange(tempSensitivityMode);
   const [inputMode, setInputMode] = useState(tempSensitivityMode);
   const wasOpenRef = useRef(false);
 
@@ -97,7 +99,10 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   }, [inputMode, tempSensitivities, tempSensitivityMode]);
 
   const commitSensitivity = () => {
-    const normalized = normalizeSensitivity(Number.parseFloat(sensitivityInput));
+    const normalized = normalizeSensitivityForMode(
+      tempSensitivityMode,
+      Number.parseFloat(sensitivityInput),
+    );
     if (normalized === null) {
       setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
       return;
@@ -112,7 +117,10 @@ export const SettingsDialog = React.memo(function SettingsDialog({
     if (!/^\d*(?:\.\d{0,3})?$/.test(value)) return;
     setSensitivityInput(value);
 
-    const normalized = normalizeSensitivity(Number.parseFloat(value));
+    const normalized = normalizeSensitivityForMode(
+      tempSensitivityMode,
+      Number.parseFloat(value),
+    );
     if (normalized !== null) {
       setTempSensitivity(tempSensitivityMode, normalized);
     }
@@ -156,20 +164,25 @@ export const SettingsDialog = React.memo(function SettingsDialog({
                 >
                   <SelectTrigger aria-label="游戏" className="w-full min-w-0">
                     <SelectValue>
-                      {(value) => value === "valorant" ? "无畏契约" : "CS2"}
+                      {(value) => {
+                        if (value === "valorant") return "无畏契约";
+                        if (value === "delta") return "三角洲行动";
+                        return "CS2";
+                      }}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cs2">CS2</SelectItem>
                     <SelectItem value="valorant">无畏契约</SelectItem>
+                    <SelectItem value="delta">三角洲行动</SelectItem>
                   </SelectContent>
                 </Select>
                 <Input
                   id="sensitivity"
                   aria-label="灵敏度数值"
                   type="number"
-                  min={0.01}
-                  max={10}
+                  min={sensitivityRange.min}
+                  max={sensitivityRange.max}
                   step={0.001}
                   value={sensitivityInput}
                   onChange={handleSensitivityChange}
