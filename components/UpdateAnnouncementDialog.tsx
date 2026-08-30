@@ -37,7 +37,6 @@ export function UpdateAnnouncementDialog({
 
         <ul className="space-y-3 text-sm">
           <li>• 三角洲灵敏度已适配</li>
-          <li>• 新增公告弹窗</li>
         </ul>
 
         <Button
