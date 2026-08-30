@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { RootState } from "@react-three/fiber";
 import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
@@ -11,6 +11,7 @@ import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
+import { UpdateAnnouncementDialog } from "@/components/UpdateAnnouncementDialog";
 import { useSettings } from "@/hooks/useSettings";
 import { useR3FBridge } from "@/hooks/useR3FBridge";
 import { useGameLogic } from "@/hooks/useGameLogic";
@@ -20,6 +21,10 @@ import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
 import { setMasterVolume } from "@/lib/sounds";
 import { markRendererStartupStage } from "@/lib/rendererStartupDiagnostics";
+import {
+  UPDATE_ANNOUNCEMENT_ID,
+  UPDATE_ANNOUNCEMENT_STORAGE_KEY,
+} from "@/lib/updateAnnouncement";
 
 interface GameBoardProps {
   onRendererReady?: () => void;
@@ -27,6 +32,8 @@ interface GameBoardProps {
 
 export default function GameBoard({ onRendererReady }: GameBoardProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const announcementCheckedRef = useRef(false);
   const settings = useSettings();
   const {
     openSettings: openTrainingSettings,
@@ -86,6 +93,26 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   });
   const { triggerStart, triggerResume } = game;
 
+  const showUpdateAnnouncement = useCallback(() => {
+    if (announcementCheckedRef.current) return;
+    announcementCheckedRef.current = true;
+    try {
+      if (
+        localStorage.getItem(UPDATE_ANNOUNCEMENT_STORAGE_KEY) ===
+        UPDATE_ANNOUNCEMENT_ID
+      ) {
+        return;
+      }
+      localStorage.setItem(
+        UPDATE_ANNOUNCEMENT_STORAGE_KEY,
+        UPDATE_ANNOUNCEMENT_ID,
+      );
+    } catch {
+      // 存储不可用时仍展示一次，但不影响游戏初始化。
+    }
+    setAnnouncementOpen(true);
+  }, []);
+
   // 稳定回调
   const handlePauseHome = useCallback(() => {
     document.exitPointerLock();
@@ -112,8 +139,9 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       canvas.addEventListener("webglcontextlost", onLost);
       canvas.addEventListener("webglcontextrestored", onRestored);
       onRendererReady?.();
+      showUpdateAnnouncement();
     },
-    [bridge.canvasRef, onRendererReady],
+    [bridge.canvasRef, onRendererReady, showUpdateAnnouncement],
   );
 
   return (
@@ -184,6 +212,10 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       )}
 
       <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      <UpdateAnnouncementDialog
+        open={announcementOpen}
+        onOpenChange={setAnnouncementOpen}
+      />
 
       {/* 倒计时 */}
       {game.countdown !== null && (

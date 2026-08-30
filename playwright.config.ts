@@ -10,6 +10,20 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:3000",
     trace: "off",
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: "http://localhost:3000",
+          localStorage: [
+            {
+              name: "shootbang-last-seen-announcement",
+              value: "2026-08-delta",
+            },
+          ],
+        },
+      ],
+    },
   },
   projects: [
     {

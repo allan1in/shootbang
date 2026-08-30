@@ -343,6 +343,35 @@ test.describe("空闲界面", () => {
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
   });
+
+  test("渲染器就绪后展示一次公告", async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.removeItem("shootbang-last-seen-announcement");
+    });
+    await page.reload();
+    await waitForCanvas(page);
+
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "公告" })).toBeVisible();
+    await expect(page.getByText("三角洲灵敏度已适配")).toBeVisible();
+    await expect(page.getByText("新增公告弹窗")).toBeVisible();
+    await expect(page.getByRole("button", { name: "了解" })).not.toBeFocused();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("shootbang-last-seen-announcement"),
+      ),
+    ).toBe("2026-08-delta");
+
+    await page
+      .locator('[data-slot="dialog-viewport"]')
+      .click({ position: { x: 1, y: 1 } });
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    await page.getByRole("button", { name: "了解" }).click();
+    await page.reload();
+    await waitForCanvas(page);
+    await expect(page.getByRole("heading", { name: "公告" })).not.toBeVisible();
+  });
 });
 
 // ===== 原始鼠标输入 =====
