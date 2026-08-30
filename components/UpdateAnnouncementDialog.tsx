@@ -36,7 +36,7 @@ export function UpdateAnnouncementDialog({
         </DialogHeader>
 
         <ul className="space-y-3 text-sm">
-          <li>• 三角洲灵敏度已适配</li>
+          <li>• 已适配三角洲行动灵敏度</li>
         </ul>
 
         <Button

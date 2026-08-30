@@ -353,7 +353,7 @@ test.describe("空闲界面", () => {
 
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("heading", { name: "公告" })).toBeVisible();
-    await expect(page.getByText("三角洲灵敏度已适配")).toBeVisible();
+    await expect(page.getByText("已适配三角洲行动灵敏度")).toBeVisible();
     await expect(page.getByRole("button", { name: "了解" })).not.toBeFocused();
     expect(
       await page.evaluate(() =>
