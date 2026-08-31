@@ -17,7 +17,7 @@ Shootbang 面向 PC 端设计，需要使用鼠标和键盘操作，暂不支持
 - **训练统计**：记录命中数、命中率和有效训练时间内的平均反应时间。
 - **完整训练流程**：支持倒计时、暂停、恢复、重新开始和结算。
 - **性能监控**：使用 Drei `PerformanceMonitor` 检测持续性能下降，并通过 Sentry 上报最小诊断信息。
-- **用户反馈**：使用 Cloudflare Turnstile 完成人机验证，通过 Next.js 服务端和 Resend 将反馈发送到指定邮箱。
+- **用户反馈**：通过 Next.js 服务端和 Resend 将反馈发送到指定邮箱，并由 Vercel Firewall 对公开接口执行 IP 限流。
 - **移动端优化**：移动设备只加载访问提示，不下载 3D 场景和主题音频等游戏依赖。
 
 ## 技术栈
@@ -29,7 +29,7 @@ Shootbang 面向 PC 端设计，需要使用鼠标和键盘操作，暂不支持
 | 状态管理 | Zustand |
 | UI 与样式 | shadcn/ui、Base UI、Tailwind CSS v4、Lucide React |
 | 可观测性 | Sentry、Vercel Speed Insights |
-| 反馈服务 | Cloudflare Turnstile、Resend |
+| 反馈服务 | Vercel Firewall、Resend |
 | 测试 | Playwright、TypeScript、ESLint |
 | 部署 | Vercel |
 
@@ -52,12 +52,11 @@ pnpm dev
 
 | 变量 | 用途 |
 |---|---|
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | 浏览器端 Turnstile Site Key |
-| `TURNSTILE_SECRET_KEY` | 服务端 Turnstile Secret Key |
-| `FEEDBACK_ALLOWED_HOSTNAMES` | 允许提交反馈的 hostname 列表 |
 | `RESEND_API_KEY` | Resend 服务端 API Key |
 | `FEEDBACK_FROM_EMAIL` | 已验证域名下的反馈发件地址 |
 | `FEEDBACK_TO_EMAIL` | 接收用户反馈的邮箱 |
+
+反馈接口的限流规则在 Vercel Firewall 中配置，不需要环境变量。推荐仅匹配 `POST /api/feedback`，按 IP 在 10 分钟内最多允许 5 次请求。
 
 Sentry 的 DSN、组织、项目和 Source Map 上传凭据通过部署环境配置。密钥不得提交到仓库。
 

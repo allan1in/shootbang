@@ -13,28 +13,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  TurnstileWidget,
-  type TurnstileStatus,
-  type TurnstileWidgetHandle,
-} from "@/components/TurnstileWidget";
-import {
-  isTurnstileTestSiteKey,
-  type FeedbackResponse,
-} from "@/lib/feedback";
+import type { FeedbackResponse } from "@/lib/feedback";
 
 const MAX_FEEDBACK_LENGTH = 2_000;
-const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
-const CONFIGURED_TURNSTILE_SITE_KEY =
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
-  (process.env.NODE_ENV === "development"
-    ? TURNSTILE_TEST_SITE_KEY
-    : undefined);
-const TURNSTILE_SITE_KEY =
-  process.env.NODE_ENV === "production" &&
-  isTurnstileTestSiteKey(CONFIGURED_TURNSTILE_SITE_KEY)
-    ? undefined
-    : CONFIGURED_TURNSTILE_SITE_KEY;
 
 interface FeedbackDialogProps {
   open: boolean;
@@ -51,7 +32,7 @@ const ERROR_MESSAGES: Record<
   string
 > = {
   invalid_input: "反馈内容无效，请检查后重试。",
-  verification_failed: "验证未通过或已失效，请重试。",
+  rate_limited: "提交过于频繁，请稍后重试。",
   service_unavailable: "反馈服务暂不可用，请稍后重试。",
   send_failed: "反馈发送失败，请稍后重试。",
 };
@@ -59,10 +40,6 @@ const ERROR_MESSAGES: Record<
 export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [turnstileStatus, setTurnstileStatus] =
-    useState<TurnstileStatus>("loading");
-  const [turnstileInteractive, setTurnstileInteractive] = useState(false);
-  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const attemptRef = useRef<SubmissionAttempt | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const openRef = useRef(open);
@@ -79,8 +56,6 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     attemptRef.current = null;
     setContent("");
     setSubmitting(false);
-    setTurnstileStatus("loading");
-    setTurnstileInteractive(false);
   }, []);
 
   const closeDialog = useCallback(() => {
@@ -125,11 +100,6 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       toast.error(ERROR_MESSAGES.invalid_input);
       return;
     }
-    if (turnstileStatus !== "ready" || !turnstileRef.current) {
-      toast.error("验证服务正在加载，请稍后重试。");
-      return;
-    }
-
     const attempt =
       attemptRef.current?.content === normalizedContent
         ? attemptRef.current
@@ -141,9 +111,6 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     setSubmitting(true);
 
     try {
-      const turnstileToken = await turnstileRef.current.execute();
-      if (!openRef.current || generation !== generationRef.current) return;
-
       const controller = new AbortController();
       requestRef.current = controller;
       const response = await fetch("/api/feedback", {
@@ -151,17 +118,18 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: normalizedContent,
-          turnstileToken,
           submissionId: attempt.id,
           page: window.location.pathname,
         }),
         signal: controller.signal,
       });
-      const result = (await response.json()) as FeedbackResponse;
+      const result: FeedbackResponse =
+        response.status === 429
+          ? { ok: false, code: "rate_limited" }
+          : await response.json();
       if (!openRef.current || generation !== generationRef.current) return;
 
       if (!response.ok || !result.ok) {
-        turnstileRef.current?.reset();
         toast.error(
           result.ok ? ERROR_MESSAGES.send_failed : ERROR_MESSAGES[result.code],
         );
@@ -179,15 +147,14 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       }
       if (error instanceof Error && error.name === "AbortError") return;
       if (!openRef.current || generation !== generationRef.current) return;
-      turnstileRef.current?.reset();
-      toast.error("验证或发送失败，请稍后重试。");
+      toast.error("反馈发送失败，请稍后重试。");
     } finally {
       if (generation === generationRef.current) {
         requestRef.current = null;
         setSubmitting(false);
       }
     }
-  }, [closeDialog, content, turnstileStatus]);
+  }, [closeDialog, content]);
 
   return (
     <Dialog
@@ -208,42 +175,21 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid">
-          <div className="space-y-2">
-            <Textarea
-              id="feedback-content"
-              aria-label="反馈内容"
-              className="resize-none"
-              value={content}
-              maxLength={MAX_FEEDBACK_LENGTH}
-              rows={7}
-              disabled={submitting}
-              placeholder="请描述你遇到的问题或建议"
-              onChange={handleContentChange}
-            />
-            <div className="text-right text-xs tabular-nums text-muted-foreground">
-              {content.length} / {MAX_FEEDBACK_LENGTH}
-            </div>
+        <div className="space-y-2">
+          <Textarea
+            id="feedback-content"
+            aria-label="反馈内容"
+            className="resize-none"
+            value={content}
+            maxLength={MAX_FEEDBACK_LENGTH}
+            rows={7}
+            disabled={submitting}
+            placeholder="请描述你遇到的问题或建议"
+            onChange={handleContentChange}
+          />
+          <div className="text-right text-xs tabular-nums text-muted-foreground">
+            {content.length} / {MAX_FEEDBACK_LENGTH}
           </div>
-
-          {open && (
-            <div
-              data-testid="feedback-turnstile-slot"
-              aria-hidden={!turnstileInteractive}
-              className={`overflow-hidden transition-[height,margin,opacity] duration-200 ${
-                turnstileInteractive
-                  ? "visible mt-2 h-[65px] opacity-100"
-                  : "invisible h-0 opacity-0"
-              }`}
-            >
-              <TurnstileWidget
-                ref={turnstileRef}
-                siteKey={TURNSTILE_SITE_KEY}
-                onStatusChange={setTurnstileStatus}
-                onInteractiveChange={setTurnstileInteractive}
-              />
-            </div>
-          )}
         </div>
 
         <DialogFooter className="grid grid-cols-2">

@@ -323,7 +323,7 @@ Sentry 继续自动附加浏览器、操作系统、release 和 environment。
 - Pointer Lock 轨迹；
 - 点击位置、目标位置和射击轨迹；
 - 灵敏度、音量和用户身份；
-- 反馈正文和 Turnstile token。
+- 反馈正文和邮件服务密钥。
 
 ## 11. Breadcrumb、Event 与 Issue
 

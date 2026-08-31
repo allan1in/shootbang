@@ -104,7 +104,7 @@ https://shootbang.allan1in.top/
 | 环境 | 用途 | 是否面向搜索引擎 |
 |---|---|---|
 | Local | 开发与自动化测试 | 否 |
-| Preview | 功能验收、Turnstile/Resend 等真实集成测试 | 否，受 Vercel Authentication 保护 |
+| Preview | 功能验收、Resend 等真实集成测试 | 否，受 Vercel Authentication 保护 |
 | Production | 对外正式产品 | 是 |
 
 Preview 的哈希部署地址会随部署变化，因此不能作为搜索平台和外部推广的稳定入口。正式域名始终指向 Production。

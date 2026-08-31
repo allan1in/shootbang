@@ -1,43 +1,21 @@
-export const FEEDBACK_ACTION = "feedback_submit";
 export const MAX_FEEDBACK_LENGTH = 2_000;
-export const MAX_TURNSTILE_TOKEN_LENGTH = 2_048;
 export const MAX_FEEDBACK_PAGE_LENGTH = 200;
-
-const TURNSTILE_TEST_SITE_KEYS = new Set([
-  "1x00000000000000000000AA",
-  "2x00000000000000000000AB",
-  "1x00000000000000000000BB",
-  "2x00000000000000000000BB",
-  "3x00000000000000000000FF",
-]);
-
-export function isTurnstileTestSiteKey(value: string | undefined) {
-  return value ? TURNSTILE_TEST_SITE_KEYS.has(value) : false;
-}
 
 export interface FeedbackRequest {
   content: string;
-  turnstileToken: string;
   submissionId: string;
   page: string;
 }
 
 export type FeedbackErrorCode =
   | "invalid_input"
-  | "verification_failed"
+  | "rate_limited"
   | "service_unavailable"
   | "send_failed";
 
 export type FeedbackResponse =
   | { ok: true }
   | { ok: false; code: FeedbackErrorCode };
-
-export interface TurnstileVerification {
-  success: boolean;
-  action?: string;
-  hostname?: string;
-  errorCodes?: string[];
-}
 
 export interface FeedbackEmail {
   from: string;
@@ -48,7 +26,6 @@ export interface FeedbackEmail {
 }
 
 export interface FeedbackContext {
-  allowedHostnames: ReadonlySet<string>;
   from: string;
   to: string;
   environment: string;
@@ -58,11 +35,10 @@ export interface FeedbackContext {
 }
 
 export interface FeedbackDependencies {
-  verifyTurnstile: (token: string) => Promise<TurnstileVerification>;
   sendEmail: (email: FeedbackEmail) => Promise<void>;
 }
 
-export type FeedbackProvider = "turnstile" | "resend";
+export type FeedbackProvider = "resend";
 
 export class FeedbackProviderError extends Error {
   readonly provider: FeedbackProvider;
@@ -84,10 +60,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseFeedbackRequest(value: unknown): FeedbackRequest | null {
   if (!isRecord(value)) return null;
 
-  const { content, turnstileToken, submissionId, page } = value;
+  const { content, submissionId, page } = value;
   if (
     typeof content !== "string" ||
-    typeof turnstileToken !== "string" ||
     typeof submissionId !== "string" ||
     typeof page !== "string"
   ) {
@@ -98,8 +73,6 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest | null {
   if (
     normalizedContent.length < 1 ||
     normalizedContent.length > MAX_FEEDBACK_LENGTH ||
-    turnstileToken.length < 1 ||
-    turnstileToken.length > MAX_TURNSTILE_TOKEN_LENGTH ||
     !UUID_PATTERN.test(submissionId) ||
     page.length < 1 ||
     page.length > MAX_FEEDBACK_PAGE_LENGTH ||
@@ -111,19 +84,9 @@ export function parseFeedbackRequest(value: unknown): FeedbackRequest | null {
 
   return {
     content: normalizedContent,
-    turnstileToken,
     submissionId,
     page,
   };
-}
-
-export function parseAllowedHostnames(value: string): Set<string> {
-  return new Set(
-    value
-      .split(",")
-      .map((hostname) => hostname.trim().toLowerCase())
-      .filter(Boolean),
-  );
 }
 
 function safeDiagnosticValue(value: string, maxLength: number) {
@@ -162,25 +125,6 @@ export async function processFeedback(
   context: FeedbackContext,
   dependencies: FeedbackDependencies,
 ): Promise<FeedbackResponse> {
-  let verification: TurnstileVerification;
-  try {
-    verification = await dependencies.verifyTurnstile(
-      request.turnstileToken,
-    );
-  } catch (error) {
-    throw new FeedbackProviderError("turnstile", error);
-  }
-
-  const hostname = verification.hostname?.toLowerCase();
-  if (
-    !verification.success ||
-    verification.action !== FEEDBACK_ACTION ||
-    !hostname ||
-    !context.allowedHostnames.has(hostname)
-  ) {
-    return { ok: false, code: "verification_failed" };
-  }
-
   const email = createFeedbackEmail(request, context);
   try {
     await dependencies.sendEmail(email);

@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  FEEDBACK_ACTION,
   createFeedbackEmail,
   parseFeedbackRequest,
   processFeedback,
@@ -11,13 +10,11 @@ import {
 
 const VALID_REQUEST: FeedbackRequest = {
   content: "目标偶尔会闪烁。",
-  turnstileToken: "test-token",
   submissionId: "550e8400-e29b-41d4-a716-446655440000",
   page: "/",
 };
 
 const VALID_CONTEXT: FeedbackContext = {
-  allowedHostnames: new Set(["localhost"]),
   from: "Shootbang <feedback@send.example.com>",
   to: "owner@example.com",
   environment: "preview",
@@ -27,7 +24,7 @@ const VALID_CONTEXT: FeedbackContext = {
 };
 
 test.describe("反馈服务逻辑", () => {
-  test("严格校验 1～2000 字、UUID、token 和页面路径", () => {
+  test("严格校验 1～2000 字、UUID 和页面路径", () => {
     expect(parseFeedbackRequest(VALID_REQUEST)).toEqual(VALID_REQUEST);
     expect(
       parseFeedbackRequest({ ...VALID_REQUEST, content: "x".repeat(2_000) }),
@@ -40,21 +37,13 @@ test.describe("反馈服务逻辑", () => {
       parseFeedbackRequest({ ...VALID_REQUEST, submissionId: "not-a-uuid" }),
     ).toBeNull();
     expect(
-      parseFeedbackRequest({ ...VALID_REQUEST, turnstileToken: "" }),
-    ).toBeNull();
-    expect(
       parseFeedbackRequest({ ...VALID_REQUEST, page: "https://evil.test" }),
     ).toBeNull();
   });
 
-  test("验证通过后构建最小邮件并使用固定幂等键", async () => {
+  test("构建最小邮件并使用固定幂等键", async () => {
     const sent: FeedbackEmail[] = [];
     const result = await processFeedback(VALID_REQUEST, VALID_CONTEXT, {
-      verifyTurnstile: async () => ({
-        success: true,
-        action: FEEDBACK_ACTION,
-        hostname: "LOCALHOST",
-      }),
       sendEmail: async (email) => {
         sent.push(email);
       },
@@ -74,48 +63,12 @@ test.describe("反馈服务逻辑", () => {
     expect(sent[0].text).toContain("Page: /");
     expect(sent[0].text).toContain("Browser: Test Browser");
     expect(sent[0].text).toContain("Release: commit-sha");
-    expect(sent[0].text).not.toContain(VALID_REQUEST.turnstileToken);
     expect(sent[0].text).not.toContain("IP");
-  });
-
-  test("错误 action、hostname 或拒绝结果都不会发邮件", async () => {
-    let sendCount = 0;
-    for (const verification of [
-      { success: false, action: FEEDBACK_ACTION, hostname: "localhost" },
-      { success: true, action: "login", hostname: "localhost" },
-      { success: true, action: FEEDBACK_ACTION, hostname: "other.test" },
-    ]) {
-      const result = await processFeedback(VALID_REQUEST, VALID_CONTEXT, {
-        verifyTurnstile: async () => verification,
-        sendEmail: async () => {
-          sendCount += 1;
-        },
-      });
-      expect(result).toEqual({ ok: false, code: "verification_failed" });
-    }
-    expect(sendCount).toBe(0);
   });
 
   test("外部服务异常带安全的 provider 分类", async () => {
     await expect(
       processFeedback(VALID_REQUEST, VALID_CONTEXT, {
-        verifyTurnstile: async () => {
-          throw new Error("network unavailable");
-        },
-        sendEmail: async () => {},
-      }),
-    ).rejects.toMatchObject({
-      name: "FeedbackProviderError",
-      provider: "turnstile",
-    });
-
-    await expect(
-      processFeedback(VALID_REQUEST, VALID_CONTEXT, {
-        verifyTurnstile: async () => ({
-          success: true,
-          action: FEEDBACK_ACTION,
-          hostname: "localhost",
-        }),
         sendEmail: async () => {
           throw new Error("send unavailable");
         },
@@ -139,50 +92,6 @@ test.describe("反馈服务逻辑", () => {
   });
 });
 
-async function installTurnstileMock(
-  page: Page,
-  outcome: "success" | "error" = "success",
-) {
-  await page.route(
-    "https://challenges.cloudflare.com/turnstile/v0/api.js*",
-    async (route) => {
-      await route.fulfill({
-        contentType: "application/javascript",
-        body: `
-          (() => {
-            let options;
-            window.__turnstileResetCount = 0;
-            window.turnstile = {
-              render(container, nextOptions) {
-                options = nextOptions;
-                container.dataset.turnstileReady = "true";
-                return "feedback-widget";
-              },
-              execute() {
-                setTimeout(() => {
-                  if (${JSON.stringify(outcome)} === "success") {
-                    options.callback("mock-turnstile-token");
-                  } else {
-                    options["error-callback"]("mock-error");
-                  }
-                }, 0);
-              },
-              reset() { window.__turnstileResetCount += 1; },
-              remove() {},
-            };
-            window.__turnstileEnterInteractive = () => {
-              options["before-interactive-callback"]();
-            };
-            window.__turnstileLeaveInteractive = () => {
-              options["after-interactive-callback"]();
-            };
-          })();
-        `,
-      });
-    },
-  );
-}
-
 async function waitForGame(page: Page) {
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
@@ -191,7 +100,6 @@ async function waitForGame(page: Page) {
 
 test.describe("反馈 Dialog", () => {
   test("Textarea 使用统一滚动条样式并保留原生滚动行为", async ({ page }) => {
-    await installTurnstileMock(page);
     await waitForGame(page);
     await page.getByRole("button", { name: "反馈" }).click();
 
@@ -306,93 +214,7 @@ test.describe("反馈 Dialog", () => {
       .toEqual({ start: 0, end: 1 });
   });
 
-  test("Turnstile 仅在交互时占据表单布局空间", async ({ page }) => {
-    await installTurnstileMock(page);
-    await waitForGame(page);
-    await page.getByRole("button", { name: "反馈" }).click();
-
-    const slot = page.getByTestId("feedback-turnstile-slot");
-    await page.waitForFunction(
-      () =>
-        typeof (
-          window as Window & {
-            __turnstileEnterInteractive?: () => void;
-          }
-        ).__turnstileEnterInteractive === "function",
-    );
-
-    await expect(slot).toHaveAttribute("aria-hidden", "true");
-    await expect
-      .poll(() =>
-        slot.evaluate((element) => ({
-          height: Number.parseFloat(getComputedStyle(element).height),
-          marginTop: Number.parseFloat(getComputedStyle(element).marginTop),
-          visibility: getComputedStyle(element).visibility,
-        })),
-      )
-      .toEqual({ height: 0, marginTop: 0, visibility: "hidden" });
-
-    await page.evaluate(() => {
-      const trigger = (
-        window as Window & {
-          __turnstileEnterInteractive?: () => void;
-        }
-      ).__turnstileEnterInteractive;
-      if (!trigger) throw new Error("Turnstile interactive callback unavailable");
-      trigger();
-    });
-
-    await expect(slot).toHaveAttribute("aria-hidden", "false");
-    await expect
-      .poll(() =>
-        slot.evaluate((element) =>
-          Number.parseFloat(getComputedStyle(element).height),
-        ),
-      )
-      .toBe(65);
-
-    const layout = await page.evaluate(() => {
-      const textarea = document.querySelector("textarea");
-      const slotElement = document.querySelector(
-        '[data-testid="feedback-turnstile-slot"]',
-      );
-      const footer = document.querySelector('[data-slot="dialog-footer"]');
-      if (!textarea || !slotElement || !footer) return null;
-
-      const textareaRect = textarea.getBoundingClientRect();
-      const slotRect = slotElement.getBoundingClientRect();
-      const footerRect = footer.getBoundingClientRect();
-      return {
-        slotAfterTextarea: slotRect.top >= textareaRect.bottom,
-        footerAfterSlot: footerRect.top >= slotRect.bottom,
-      };
-    });
-    expect(layout).toEqual({
-      slotAfterTextarea: true,
-      footerAfterSlot: true,
-    });
-
-    await page.evaluate(() => {
-      const trigger = (
-        window as Window & {
-          __turnstileLeaveInteractive?: () => void;
-        }
-      ).__turnstileLeaveInteractive;
-      if (!trigger) throw new Error("Turnstile interactive callback unavailable");
-      trigger();
-    });
-    await expect(slot).toHaveAttribute("aria-hidden", "true");
-    await expect
-      .poll(() =>
-        slot.evaluate((element) =>
-          Number.parseFloat(getComputedStyle(element).height),
-        ),
-      )
-      .toBe(0);
-  });
-
   test("开始页提交成功并防止双击重复请求", async ({ page }) => {
-    await installTurnstileMock(page);
     let requestCount = 0;
     let capturedBody: Record<string, unknown> | null = null;
     let releaseResponse!: () => void;
@@ -419,9 +241,6 @@ test.describe("反馈 Dialog", () => {
 
     await dialog.locator("textarea").fill("  目标偶尔会闪烁。  ");
     await expect(page.getByText("12 / 2000")).toBeVisible();
-    await expect(
-      page.locator('[data-turnstile-ready="true"]'),
-    ).toHaveAttribute("data-turnstile-ready", "true");
     const sendButton = dialog
       .locator('[data-slot="dialog-footer"] button')
       .last();
@@ -446,7 +265,6 @@ test.describe("反馈 Dialog", () => {
     const submittedBody = capturedBody as unknown as Record<string, unknown>;
     expect(submittedBody).toMatchObject({
       content: "目标偶尔会闪烁。",
-      turnstileToken: "mock-turnstile-token",
       page: "/",
     });
     expect(String(submittedBody.submissionId)).toMatch(
@@ -454,8 +272,7 @@ test.describe("反馈 Dialog", () => {
     );
   });
 
-  test("发送失败保留草稿、重置验证并复用提交 ID", async ({ page }) => {
-    await installTurnstileMock(page);
+  test("发送失败保留草稿并复用提交 ID", async ({ page }) => {
     const submissionIds: string[] = [];
     await page.route("**/api/feedback", async (route) => {
       const body = route.request().postDataJSON() as { submissionId: string };
@@ -469,10 +286,6 @@ test.describe("反馈 Dialog", () => {
     await waitForGame(page);
     await page.getByRole("button", { name: "反馈" }).click();
     await page.getByRole("textbox", { name: "反馈内容" }).fill("发送失败测试");
-    await expect(
-      page.locator('[data-turnstile-ready="true"]'),
-    ).toHaveAttribute("data-turnstile-ready", "true");
-
     await page.getByRole("button", { name: "发送" }).click();
     await expect(page.getByText("反馈发送失败，请稍后重试。")).toBeVisible();
     await expect(
@@ -484,19 +297,9 @@ test.describe("反馈 Dialog", () => {
     await page.getByRole("button", { name: "发送" }).click();
     await expect.poll(() => submissionIds.length).toBe(2);
     expect(submissionIds[1]).toBe(submissionIds[0]);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            (window as typeof window & { __turnstileResetCount?: number })
-              .__turnstileResetCount,
-        ),
-      )
-      .toBe(2);
   });
 
   test("取消、Esc、叉号丢弃草稿，遮罩点击不关闭", async ({ page }) => {
-    await installTurnstileMock(page);
     await waitForGame(page);
     const open = () => page.getByRole("button", { name: "反馈" }).click();
 
@@ -518,27 +321,26 @@ test.describe("反馈 Dialog", () => {
     await expect(page.getByRole("dialog", { name: "反馈" })).not.toBeVisible();
   });
 
-  test("Turnstile 失败时不请求邮件接口", async ({ page }) => {
-    await installTurnstileMock(page, "error");
-    let requestCount = 0;
+  test("Vercel Firewall 限流时保留草稿并显示明确提示", async ({ page }) => {
     await page.route("**/api/feedback", async (route) => {
-      requestCount += 1;
-      await route.abort();
+      await route.fulfill({
+        status: 429,
+        contentType: "text/plain",
+        body: "Too Many Requests",
+      });
     });
     await waitForGame(page);
     await page.getByRole("button", { name: "反馈" }).click();
-    await page.getByRole("textbox", { name: "反馈内容" }).fill("验证失败测试");
-    await expect(
-      page.locator('[data-turnstile-ready="true"]'),
-    ).toHaveAttribute("data-turnstile-ready", "true");
+    const textarea = page.getByRole("textbox", { name: "反馈内容" });
+    await textarea.fill("限流测试");
     await page.getByRole("button", { name: "发送" }).click();
 
-    await expect(page.getByText("验证或发送失败，请稍后重试。")).toBeVisible();
-    expect(requestCount).toBe(0);
+    await expect(page.getByText("提交过于频繁，请稍后重试。")).toBeVisible();
+    await expect(textarea).toHaveValue("限流测试");
+    await expect(page.getByRole("dialog", { name: "反馈" })).toBeVisible();
   });
 
   test("暂停和结算页面入口不改变游戏状态", async ({ page }) => {
-    await installTurnstileMock(page);
     await waitForGame(page);
 
     await page.evaluate(() => {
@@ -572,16 +374,40 @@ test.describe("反馈 Dialog", () => {
 });
 
 test.describe("反馈 Route Handler", () => {
+  const sameOriginHeaders = { Origin: "http://localhost:3000" };
+
+  test("拒绝缺失或不匹配的 Origin", async ({ request }) => {
+    const missingOrigin = await request.post("/api/feedback", {
+      data: VALID_REQUEST,
+    });
+    expect(missingOrigin.status()).toBe(403);
+    expect(await missingOrigin.json()).toEqual({
+      ok: false,
+      code: "invalid_input",
+    });
+
+    const foreignOrigin = await request.post("/api/feedback", {
+      data: VALID_REQUEST,
+      headers: { Origin: "https://example.com" },
+    });
+    expect(foreignOrigin.status()).toBe(403);
+    expect(await foreignOrigin.json()).toEqual({
+      ok: false,
+      code: "invalid_input",
+    });
+  });
+
   test("在调用外部服务前拒绝错误格式和超长内容", async ({ request }) => {
     const nonJson = await request.post("/api/feedback", {
       data: "invalid",
-      headers: { "Content-Type": "text/plain" },
+      headers: { ...sameOriginHeaders, "Content-Type": "text/plain" },
     });
     expect(nonJson.status()).toBe(400);
     expect(await nonJson.json()).toEqual({ ok: false, code: "invalid_input" });
 
     const tooLong = await request.post("/api/feedback", {
       data: { ...VALID_REQUEST, content: "x".repeat(2_001) },
+      headers: sameOriginHeaders,
     });
     expect(tooLong.status()).toBe(400);
     expect(await tooLong.json()).toEqual({ ok: false, code: "invalid_input" });
