@@ -11,6 +11,7 @@ import {
   sanitizeRendererStartupText,
   type RendererStartupDiagnosticsSnapshot,
   type RendererStartupFailureStage,
+  type RendererStartupOutcomeReport,
   type RendererStartupSlowStage,
   type WebGLStartupDiagnostics,
 } from "@/lib/rendererStartupDiagnostics";
@@ -38,6 +39,7 @@ interface WebGLTestControls {
   diagnosticReports?: WebGLStartupTestReport[];
   reportedSlowStages?: RendererStartupSlowStage[];
   slowDiagnosticReports?: RendererStartupSlowTestReport[];
+  outcomeReports?: RendererStartupOutcomeReport[];
   getDiagnostics?: () => RendererStartupDiagnosticsSnapshot | null;
   completeRendererStartup?: () => void;
   releaseGameBoardImport?: () => void;
@@ -87,6 +89,29 @@ function releaseWebGLContext(context: WebGL2RenderingContext | null) {
   }
 }
 
+function getWebGLEnvironmentDiagnostics() {
+  return {
+    requestedContextAttributes: "browser-default" as const,
+    navigatorGpuAvailable:
+      typeof navigator !== "undefined" && "gpu" in navigator,
+    secureContext:
+      typeof window !== "undefined" && window.isSecureContext === true,
+  };
+}
+
+function serializeWebGLContextAttributes(
+  attributes: WebGLContextAttributes | null,
+) {
+  if (!attributes) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(attributes).filter(
+      (entry): entry is [string, boolean | string] =>
+        typeof entry[1] === "boolean" || typeof entry[1] === "string",
+    ),
+  );
+}
+
 export function detectWebGL2Support() {
   if (cachedWebGL2Support !== null && cachedWebGLDiagnostics) {
     recordWebGLStartupDiagnostics({
@@ -99,6 +124,15 @@ export function detectWebGL2Support() {
 
   const startedAt = now();
   let context: WebGL2RenderingContext | null = null;
+  let canvas: HTMLCanvasElement | null = null;
+  let contextCreationError: string | undefined;
+  const handleContextCreationError = (event: Event) => {
+    const statusMessage =
+      "statusMessage" in event && typeof event.statusMessage === "string"
+        ? event.statusMessage
+        : undefined;
+    contextCreationError = sanitizeRendererStartupText(statusMessage);
+  };
 
   try {
     const hasWebGL2Constructor =
@@ -110,13 +144,20 @@ export function detectWebGL2Support() {
         hasWebGL2Constructor: false,
         contextCreated: false,
         checkDurationMs: roundMs(now() - startedAt),
+        contextFailureReason: "constructor-missing",
+        ...getWebGLEnvironmentDiagnostics(),
         softwareRenderer: false,
       };
       recordWebGLStartupDiagnostics(cachedWebGLDiagnostics);
       return cachedWebGL2Support;
     }
 
-    const canvas = document.createElement("canvas");
+    canvas = document.createElement("canvas");
+    canvas.addEventListener(
+      "webglcontextcreationerror",
+      handleContextCreationError,
+      { passive: true },
+    );
     context = canvas.getContext("webgl2");
     const contextCreated = context !== null;
     let vendor: string | undefined;
@@ -139,6 +180,12 @@ export function detectWebGL2Support() {
       hasWebGL2Constructor: true,
       contextCreated,
       checkDurationMs: roundMs(now() - startedAt),
+      contextFailureReason: contextCreated ? "none" : "context-null",
+      ...getWebGLEnvironmentDiagnostics(),
+      contextAttributes: serializeWebGLContextAttributes(
+        context?.getContextAttributes() ?? null,
+      ),
+      contextCreationError,
       vendor: sanitizeRendererStartupText(vendor),
       renderer: sanitizeRendererStartupText(renderer),
       softwareRenderer: isSoftwareWebGLRenderer(renderer),
@@ -154,6 +201,12 @@ export function detectWebGL2Support() {
         typeof window.WebGL2RenderingContext !== "undefined",
       contextCreated: context !== null,
       checkDurationMs: roundMs(now() - startedAt),
+      contextFailureReason: "exception",
+      ...getWebGLEnvironmentDiagnostics(),
+      contextAttributes: serializeWebGLContextAttributes(
+        context?.getContextAttributes() ?? null,
+      ),
+      contextCreationError,
       softwareRenderer: false,
       errorName: sanitizeRendererStartupText(errorValue?.name, 80),
       errorMessage: sanitizeRendererStartupText(errorValue?.message),
@@ -161,6 +214,10 @@ export function detectWebGL2Support() {
     recordWebGLStartupDiagnostics(cachedWebGLDiagnostics);
     return cachedWebGL2Support;
   } finally {
+    canvas?.removeEventListener(
+      "webglcontextcreationerror",
+      handleContextCreationError,
+    );
     releaseWebGLContext(context);
   }
 }
@@ -243,6 +300,7 @@ export function createRendererStartupSentryData(
     device: { ...snapshot.device } as Context,
     network: { ...snapshot.network } as Context,
     resources: { ...snapshot.resources } as Context,
+    main_thread: { ...snapshot.mainThread } as Context,
   };
 
   return {
@@ -284,6 +342,7 @@ export function createRendererStartupSlowSentryData(
     device: { ...snapshot.device } as Context,
     network: { ...snapshot.network } as Context,
     resources: { ...snapshot.resources } as Context,
+    main_thread: { ...snapshot.mainThread } as Context,
   };
 
   return {

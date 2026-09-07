@@ -10,7 +10,7 @@ Sentry.init({
   release: process.env.NEXT_PUBLIC_SENTRY_RELEASE,
   sendDefaultPii: false,
   tracesSampleRate: 0,
-  enableLogs: false,
+  enableLogs: true,
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
+import { ColorPicker } from "@/components/ui/color-picker";
 import {
   Select,
   SelectContent,
@@ -22,7 +24,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TargetSizeSettings } from "@/components/TargetSizeSettings";
+import { CrosshairGraphic } from "@/components/Crosshair";
 import type { Theme } from "@/hooks/useTheme";
+import {
+  CROSSHAIR_LIMITS,
+  type CrosshairSettings,
+} from "@/lib/crosshair";
 import {
   getSensitivityRange,
   isSensitivityMode,
@@ -51,6 +58,8 @@ interface SettingsDialogProps {
   setTempDuration: (value: number) => void;
   tempTargetSize: string;
   setTempTargetSize: (value: string) => void;
+  tempCrosshair: CrosshairSettings;
+  setTempCrosshair: React.Dispatch<React.SetStateAction<CrosshairSettings>>;
   tempTheme: Theme;
   setTempTheme: (value: Theme) => void;
   tempVolume: number;
@@ -71,6 +80,8 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   setTempDuration,
   tempTargetSize,
   setTempTargetSize,
+  tempCrosshair,
+  setTempCrosshair,
   tempTheme,
   setTempTheme,
   tempVolume,
@@ -82,14 +93,51 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   const sensitivityRange = getSensitivityRange(tempSensitivityMode);
   const [inputMode, setInputMode] = useState(tempSensitivityMode);
   const wasOpenRef = useRef(false);
+  const [colorPage, setColorPage] = useState(false);
+  const [colorDraft, setColorDraft] = useState(tempCrosshair.color);
+  const [activeTab, setActiveTab] = useState("training");
+  const colorButtonRef = useRef<HTMLButtonElement>(null);
+  const colorTitleRef = useRef<HTMLButtonElement>(null);
+  const returningFromColor = useRef(false);
+
+  const returnToCrosshair = () => {
+    returningFromColor.current = true;
+    setColorPage(false);
+  };
+
+  const discardColorChange = () => {
+    setColorDraft(tempCrosshair.color);
+    returnToCrosshair();
+  };
+
+  const saveColorChange = () => {
+    setTempCrosshair((current) => ({ ...current, color: colorDraft }));
+    returnToCrosshair();
+  };
+
+  const openColorPage = () => {
+    setColorDraft(tempCrosshair.color);
+    setColorPage(true);
+  };
+
+  useEffect(() => {
+    if (colorPage) colorTitleRef.current?.focus();
+    else if (returningFromColor.current) {
+      colorButtonRef.current?.focus();
+      returningFromColor.current = false;
+    }
+  }, [colorPage]);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
+      setColorPage(false);
+      setColorDraft(tempCrosshair.color);
+      setActiveTab("training");
       setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
       setInputMode(tempSensitivityMode);
     }
     wasOpenRef.current = open;
-  }, [open, tempSensitivities, tempSensitivityMode]);
+  }, [open, tempCrosshair.color, tempSensitivities, tempSensitivityMode]);
 
   useEffect(() => {
     if (tempSensitivityMode !== inputMode) {
@@ -132,29 +180,75 @@ export const SettingsDialog = React.memo(function SettingsDialog({
     setTempSensitivityMode(value);
   };
 
+  const updateCrosshair = <Key extends keyof CrosshairSettings>(
+    key: Key,
+    value: CrosshairSettings[Key],
+  ) => {
+    setTempCrosshair((current) => ({ ...current, [key]: value }));
+  };
+
   return (
     <Dialog
       open={open}
       disablePointerDismissal
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onCancel();
+      onOpenChange={(nextOpen, details) => {
+        if (!nextOpen && colorPage && details.reason === "escape-key") {
+          details.cancel();
+          discardColorChange();
+        } else if (!nextOpen) onCancel();
       }}
     >
       <DialogContent className="w-[22rem] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto bg-card/60 backdrop-blur-xl">
         <DialogHeader>
-          <DialogTitle>设置</DialogTitle>
+          <DialogTitle className="flex h-4 items-center gap-2">
+            {colorPage ? (
+              <>
+                <button
+                  ref={colorTitleRef}
+                  type="button"
+                  onClick={discardColorChange}
+                  className="cursor-pointer rounded-sm text-base leading-none font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  设置
+                </button>
+                <span className="text-muted-foreground/60">/</span>
+                <span>调整颜色</span>
+              </>
+            ) : "设置"}
+          </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="training" className="gap-4">
+        {colorPage ? (
+          <div className="flex h-[19.625rem] flex-col gap-4">
+            <div
+              data-crosshair-preview
+              className="flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
+              style={{
+                background:
+                  "radial-gradient(circle at center, color-mix(in oklch, color-mix(in oklch, var(--muted) 80%, var(--foreground) 20%) 80%, transparent) 0%, color-mix(in oklch, var(--background) 30%, transparent) 100%)",
+              }}
+            >
+              <CrosshairGraphic
+                settings={{ ...tempCrosshair, color: colorDraft }}
+              />
+            </div>
+            <ColorPicker
+              color={colorDraft}
+              onChange={setColorDraft}
+            />
+          </div>
+        ) : (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
           <TabsList
             aria-label="设置分类"
             className="w-full bg-muted/50 group-data-horizontal/tabs:h-9"
           >
             <TabsTrigger value="training">训练</TabsTrigger>
+            <TabsTrigger value="crosshair">准星</TabsTrigger>
             <TabsTrigger value="experience">体验</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="training" className="h-[16.5rem] flex-none space-y-4">
+          <TabsContent value="training" className="h-[16.375rem] flex-none space-y-4">
             <div className="space-y-2">
               <Label htmlFor="sensitivity">灵敏度</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -233,8 +327,82 @@ export const SettingsDialog = React.memo(function SettingsDialog({
           </TabsContent>
 
           <TabsContent
+            value="crosshair"
+            className="flex h-[16.375rem] flex-none flex-col gap-4"
+          >
+            <div
+              data-crosshair-preview
+              className="flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
+              style={{
+                background:
+                  "radial-gradient(circle at center, color-mix(in oklch, color-mix(in oklch, var(--muted) 80%, var(--foreground) 20%) 80%, transparent) 0%, color-mix(in oklch, var(--background) 30%, transparent) 100%)",
+              }}
+            >
+              <CrosshairGraphic settings={tempCrosshair} />
+            </div>
+
+            <div className="flex flex-none flex-col gap-4">
+              {(
+                [
+                  ["length", "长度", CROSSHAIR_LIMITS.length],
+                  ["thickness", "粗细", CROSSHAIR_LIMITS.thickness],
+                  ["gap", "间距", CROSSHAIR_LIMITS.gap],
+                ] as const
+              ).map(([key, label, limits]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <Label className="w-8 flex-none">{label}</Label>
+                  <Slider
+                    value={tempCrosshair[key]}
+                    min={limits.min}
+                    max={limits.max}
+                    step={0.5}
+                    onValueChange={(value) => updateCrosshair(key, value)}
+                    getAriaLabel={() => `准星${label}`}
+                  />
+                  <span className="w-7 flex-none text-right text-xs tabular-nums text-muted-foreground">
+                    {tempCrosshair[key].toFixed(1)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid flex-none grid-cols-3 gap-2">
+              {([
+                ["centerDot", "中心点"],
+                ["outline", "黑色描边"],
+              ] as const).map(([key, label]) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  variant={tempCrosshair[key] ? "default" : "outline"}
+                  aria-pressed={tempCrosshair[key]}
+                  onClick={() => updateCrosshair(key, !tempCrosshair[key])}
+                  className="w-full"
+                >
+                  {label}
+                </Button>
+              ))}
+              <Button
+                ref={colorButtonRef}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full gap-1"
+                onClick={openColorPage}
+              >
+                调整颜色
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent
             value="experience"
-            className="flex h-[16.5rem] flex-none flex-col gap-4"
+            className="flex h-[16.375rem] flex-none flex-col gap-4"
           >
             <div className="flex min-h-0 flex-1 flex-col gap-2">
               <Label>主题</Label>
@@ -279,12 +447,13 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             </div>
           </TabsContent>
         </Tabs>
+        )}
 
-        <DialogFooter className="grid grid-cols-2">
-          <Button className="w-full" type="button" variant="outline" onClick={onCancel}>
+        <DialogFooter className="grid grid-cols-2 pt-0">
+          <Button className="w-full" type="button" variant="outline" onClick={colorPage ? discardColorChange : onCancel}>
             取消
           </Button>
-          <Button className="w-full" type="button" onClick={onSave}>
+          <Button className="w-full" type="button" onClick={colorPage ? saveColorChange : onSave}>
             保存
           </Button>
         </DialogFooter>

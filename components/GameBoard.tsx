@@ -158,7 +158,9 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       <FpsCounter />
 
       {/* 准星 */}
-      {game.gameState === "playing" && game.isLocked && <Crosshair />}
+      {game.gameState === "playing" && game.isLocked && (
+        <Crosshair settings={settings.crosshair} />
+      )}
 
       {/* 暂停提示 */}
       {game.gameState === "playing" && game.isPaused && (
@@ -194,6 +196,8 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
           setTempDuration={settings.setTempDuration}
           tempTargetSize={settings.tempTargetSize}
           setTempTargetSize={settings.setTempTargetSize}
+          tempCrosshair={settings.tempCrosshair}
+          setTempCrosshair={settings.setTempCrosshair}
           tempTheme={tempTheme}
           setTempTheme={setTempTheme}
           tempVolume={tempVolume}

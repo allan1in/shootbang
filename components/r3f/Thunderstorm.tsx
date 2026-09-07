@@ -290,13 +290,13 @@ const cloudFragmentShader = /* glsl */ `
   }
 `;
 
-function OvercastSky({ flashRef }: { flashRef: RefObject<number> }) {
+export function OvercastSky({ flashRef }: { flashRef?: RefObject<number> }) {
   const matRef = useRef<THREE.ShaderMaterial>(null);
 
   useFrame(({ clock }) => {
     if (matRef.current) {
       matRef.current.uniforms.uTime.value = clock.elapsedTime;
-      matRef.current.uniforms.uFlash.value = flashRef.current;
+      matRef.current.uniforms.uFlash.value = flashRef?.current ?? 0;
     }
   });
 

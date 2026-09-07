@@ -115,6 +115,11 @@ interface RendererStartupDiagnosticReport {
       hasWebGL2Constructor: boolean;
       contextCreated: boolean;
       checkDurationMs: number;
+      contextFailureReason: string;
+      requestedContextAttributes: string;
+      contextCreationError?: string;
+      navigatorGpuAvailable: boolean;
+      secureContext: boolean;
       softwareRenderer: boolean;
       errorName?: string;
       errorMessage?: string;
@@ -122,8 +127,27 @@ interface RendererStartupDiagnosticReport {
     resources: {
       scriptCount: number;
       totalScriptTransferBytes: number;
+      nextChunkCount: number;
+      pendingChunkCount: number;
+      failedChunkCount: number;
+      topChunks: unknown[];
+      pendingChunkPaths: string[];
+      failedChunkPaths: string[];
+    };
+    mainThread: {
+      observerSupported: boolean;
+      longTaskCount: number;
+      totalLongTaskDurationMs: number;
+      maxLongTaskDurationMs: number;
     };
   };
+}
+
+interface RendererStartupOutcomeReport {
+  outcome: "success" | "pending" | "slow_recovered" | "failed";
+  slowStage?: string;
+  sampled: boolean;
+  snapshot: RendererStartupDiagnosticReport["snapshot"];
 }
 
 async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
@@ -138,6 +162,11 @@ async function mockWebGL2Failure(page: Page, mode: WebGL2FailureMode) {
         if (failureMode === "throws") {
           throw new Error("WebGL2 context creation failed");
         }
+        this.dispatchEvent(
+          new WebGLContextEvent("webglcontextcreationerror", {
+            statusMessage: "WebGL2 disabled by test environment",
+          }),
+        );
         return null;
       }
 
@@ -171,6 +200,7 @@ async function configureWebGLStartupTest(
         diagnosticReports?: RendererStartupDiagnosticReport[];
         reportedSlowStages?: string[];
         slowDiagnosticReports?: RendererStartupDiagnosticReport[];
+        outcomeReports?: RendererStartupOutcomeReport[];
         completeRendererStartup?: () => void;
         releaseGameBoardImport?: () => void;
       };
@@ -181,8 +211,20 @@ async function configureWebGLStartupTest(
       diagnosticReports: [],
       reportedSlowStages: [],
       slowDiagnosticReports: [],
+      outcomeReports: [],
     };
   }, options);
+}
+
+async function getRendererStartupOutcomeReports(page: Page) {
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __shootbang_webgl_test?: {
+        outcomeReports?: RendererStartupOutcomeReport[];
+      };
+    };
+    return state.__shootbang_webgl_test?.outcomeReports ?? [];
+  });
 }
 
 async function getRendererStartupSlowDiagnosticReports(page: Page) {
@@ -686,8 +728,11 @@ test.describe("设置面板", () => {
     const input = page.locator('input[type="number"]');
     await input.fill("3.5");
     const trainingPanel = (await content.boundingBox())!;
+    await page.getByRole("tab", { name: "准星" }).click();
+    const crosshairPanel = (await content.boundingBox())!;
     await page.getByRole("tab", { name: "体验" }).click();
     const experiencePanel = (await content.boundingBox())!;
+    expect(Math.abs(trainingPanel.height - crosshairPanel.height)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(trainingPanel.height - experiencePanel.height)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(trainingPanel.width - experiencePanel.width)).toBeLessThanOrEqual(1);
     await expect(page.getByRole("radio", { name: "默认" })).toBeVisible();
@@ -712,6 +757,187 @@ test.describe("设置面板", () => {
 
     await page.getByRole("tab", { name: "训练" }).click();
     await expect(input).toHaveValue("3.5");
+  });
+
+  test("准星设置实时预览，取消后丢弃草稿", async ({ page }) => {
+    await page.getByRole("tab", { name: "准星" }).click();
+    const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+    await expect(graphic).toHaveAttribute("data-length", "8");
+    await expect(graphic).toHaveAttribute("data-thickness", "2");
+    await expect(graphic).toHaveAttribute("data-gap", "0");
+
+    const lengthSlider = page.getByRole("slider", { name: "准星长度" });
+    const thicknessSlider = page.getByRole("slider", { name: "准星粗细" });
+    const gapSlider = page.getByRole("slider", { name: "准星间距" });
+    await expect(lengthSlider).toHaveAttribute("min", "0");
+    await expect(lengthSlider).toHaveAttribute("max", "20");
+    await expect(lengthSlider).toHaveAttribute("step", "0.5");
+    await expect(thicknessSlider).toHaveAttribute("min", "0");
+    await expect(thicknessSlider).toHaveAttribute("step", "0.5");
+    await expect(gapSlider).toHaveAttribute("step", "0.5");
+    await lengthSlider.fill("0");
+    await expect(graphic).toHaveAttribute("data-length", "0");
+
+    await page.getByRole("button", { name: "调整颜色" }).click();
+    await page.getByLabel("准星颜色 R", { exact: true }).fill("85");
+    await page.getByLabel("准星颜色 G", { exact: true }).fill("231");
+    await page.getByLabel("准星颜色 B", { exact: true }).fill("255");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await lengthSlider.fill("12.5");
+    await thicknessSlider.fill("2.5");
+    await gapSlider.fill("4.5");
+    await page.getByRole("button", { name: "中心点" }).click();
+    await page.getByRole("button", { name: "黑色描边" }).click();
+
+    await expect(graphic).toHaveAttribute("data-color", "#55e7ff");
+    await expect(graphic).toHaveAttribute("data-length", "12.5");
+    await expect(graphic).toHaveAttribute("data-thickness", "2.5");
+    await expect(graphic).toHaveAttribute("data-gap", "4.5");
+    await expect(graphic).toHaveAttribute("data-center-dot", "true");
+    await expect(graphic).toHaveAttribute("data-outline", "true");
+    await expect(graphic.locator("[data-crosshair-center-dot]")).toHaveCount(1);
+    await expect(
+      graphic.locator("[data-crosshair-center-dot-outline]"),
+    ).toHaveCount(1);
+    await expect(graphic.locator("circle")).toHaveCount(0);
+    const firstLine = graphic.locator("[data-crosshair-lines] line").first();
+    const firstOutline = graphic
+      .locator("[data-crosshair-line-outline] line")
+      .first();
+    expect(
+      Number(await firstLine.getAttribute("x1")) -
+        Number(await firstOutline.getAttribute("x1")),
+    ).toBe(1);
+    expect(
+      Number(await firstOutline.getAttribute("x2")) -
+        Number(await firstLine.getAttribute("x2")),
+    ).toBe(1);
+
+    await thicknessSlider.fill("0");
+    await expect(graphic.locator("g")).toHaveCount(0);
+    await expect(graphic.locator("[data-crosshair-center-dot]")).toHaveCount(1);
+
+    await page.getByRole("button", { name: "取消" }).click();
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.getByRole("tab", { name: "准星" }).click();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+    await expect(graphic).toHaveAttribute("data-length", "8");
+    await expect(page.getByRole("button", { name: "中心点" })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByRole("button", { name: "黑色描边" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("颜色子页支持键盘选色、输入校正并在取消时丢弃草稿", async ({ page }) => {
+    await page.getByRole("tab", { name: "准星" }).click();
+    const dialog = page.getByRole("dialog", { name: "设置", exact: true });
+    const trigger = page.getByRole("button", { name: "调整颜色" });
+    const picker = page.getByRole("dialog", { name: "设置 / 调整颜色" });
+    const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+    await trigger.click();
+    await expect(picker).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+
+    const red = page.getByLabel("准星颜色 R", { exact: true });
+    await red.fill("");
+    await red.press("Tab");
+    await expect(red).toHaveValue("255");
+    await red.fill("999");
+    await red.press("Tab");
+    await expect(red).toHaveValue("255");
+    await red.fill("85");
+    await page.getByLabel("准星颜色 G", { exact: true }).fill("231");
+    await expect(graphic).toHaveAttribute("data-color", "#55e7ff");
+
+    const hue = picker.getByRole("slider", { name: "Hue" });
+    await hue.focus();
+    await hue.press("ArrowRight");
+    await expect(graphic).not.toHaveAttribute("data-color", "#55e7ff");
+    await page.keyboard.press("Escape");
+    await expect(picker).not.toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(trigger).toBeFocused();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+
+    await trigger.click();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+    await page.getByLabel("准星颜色 R", { exact: true }).fill("42");
+    await expect(graphic).toHaveAttribute("data-color", "#2affff");
+    await page.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(picker).not.toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("tab", { name: "准星" }).click();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+  });
+
+  test("颜色子页保存仅更新草稿，面包屑返回且关闭会丢弃", async ({ page }) => {
+    await page.getByRole("tab", { name: "准星" }).click();
+    await page.getByRole("button", { name: "中心点", exact: true }).click();
+    await page.getByRole("button", { name: "调整颜色", exact: true }).click();
+    const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+    await expect(graphic).toHaveAttribute("data-center-dot", "true");
+    await page.getByLabel("准星颜色 R", { exact: true }).fill("42");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "准星" })).toHaveAttribute("aria-selected", "true");
+    await expect(graphic).toHaveAttribute("data-color", "#2affff");
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("shootbang-settings") ?? "{}").state?.crosshair?.color)).not.toBe("#2affff");
+    await page.getByRole("button", { name: "调整颜色", exact: true }).click();
+    await page.getByLabel("准星颜色 G", { exact: true }).fill("10");
+    await expect(graphic).toHaveAttribute("data-color", "#2a0aff");
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await expect(graphic).toHaveAttribute("data-color", "#2affff");
+    await page.getByRole("button", { name: "调整颜色", exact: true }).click();
+    await page.getByRole("button", { name: "关闭对话框" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("tab", { name: "准星" }).click();
+    await expect(graphic).toHaveAttribute("data-color", "#ffffff");
+    await expect(graphic).toHaveAttribute("data-center-dot", "false");
+  });
+
+  test("保存准星设置并在刷新后恢复", async ({ page }) => {
+    await page.getByRole("tab", { name: "准星" }).click();
+    await page.getByRole("button", { name: "调整颜色" }).click();
+    await page.getByLabel("准星颜色 R", { exact: true }).fill("255");
+    await page.getByLabel("准星颜色 G", { exact: true }).fill("234");
+    await page.getByLabel("准星颜色 B", { exact: true }).fill("85");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByRole("slider", { name: "准星长度" }).fill("10.5");
+    await page.getByRole("slider", { name: "准星粗细" }).fill("3.5");
+    await page.getByRole("slider", { name: "准星间距" }).fill("6.5");
+    await page.getByRole("button", { name: "中心点" }).click();
+    await page.getByRole("button", { name: "黑色描边" }).click();
+    await page.getByRole("button", { name: "保存" }).click();
+
+    const saved = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("shootbang-settings") ?? "{}").state
+        ?.crosshair,
+    );
+    expect(saved).toEqual({
+      color: "#ffea55",
+      length: 10.5,
+      thickness: 3.5,
+      gap: 6.5,
+      centerDot: true,
+      outline: true,
+    });
+
+    await page.reload();
+    await waitForCanvas(page);
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.getByRole("tab", { name: "准星" }).click();
+    const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+    await expect(graphic).toHaveAttribute("data-color", "#ffea55");
+    await expect(graphic).toHaveAttribute("data-length", "10.5");
+    await expect(graphic).toHaveAttribute("data-thickness", "3.5");
+    await expect(graphic).toHaveAttribute("data-gap", "6.5");
+    await expect(page.getByRole("button", { name: "中心点" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "黑色描边" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -1199,7 +1425,7 @@ test.describe("WebGL 启动兜底", () => {
     ]);
     const [report] = await getWebGLStartupDiagnosticReports(page);
     expect(report.stage).toBe("webgl2-check");
-    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v3");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v4");
     expect(report.snapshot.lastCompletedStage).toBe(
       "webgl2-check-completed",
     );
@@ -1207,6 +1433,9 @@ test.describe("WebGL 启动兜底", () => {
     expect(report.snapshot.webgl).toMatchObject({
       hasWebGL2Constructor: true,
       contextCreated: false,
+      contextFailureReason: "context-null",
+      requestedContextAttributes: "browser-default",
+      contextCreationError: "WebGL2 disabled by test environment",
       softwareRenderer: false,
     });
     expect(report.snapshot.rendererState).toEqual({
@@ -1214,6 +1443,13 @@ test.describe("WebGL 启动兜底", () => {
       canvasExists: false,
       rendererCreated: false,
     });
+    await expect
+      .poll(async () =>
+        (await getRendererStartupOutcomeReports(page)).map(
+          ({ outcome }) => outcome,
+        ),
+      )
+      .toContain("failed");
     expect(pageErrors).toEqual([]);
   });
 
@@ -1266,13 +1502,15 @@ test.describe("WebGL 启动兜底", () => {
       "shootbang-renderer-startup-slow-v1",
       "renderer-creation-slow",
     ]);
-    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v3");
+    expect(report.snapshot.monitorVersion).toBe("renderer-startup-v4");
     expect(report.snapshot.lastCompletedStage).toBe("canvas-render-started");
     expect(report.snapshot.failure).toBeUndefined();
     expect(report.snapshot.visibleElapsedMs).toBeGreaterThanOrEqual(50);
     expect(report.snapshot.webgl?.contextCreated).toBe(true);
     expect(report.snapshot.rendererState.rendererCreated).toBe(false);
     expect(report.snapshot.resources.scriptCount).toBeGreaterThan(0);
+    expect(report.snapshot.resources.topChunks.length).toBeLessThanOrEqual(5);
+    expect(report.snapshot.mainThread.longTaskCount).toBeGreaterThanOrEqual(0);
 
     await page.waitForTimeout(100);
     expect(await getRendererStartupSlowReports(page)).toEqual([
@@ -1282,6 +1520,16 @@ test.describe("WebGL 启动兜底", () => {
     await completeRendererStartup(page);
     await expect(page.getByRole("button", { name: "开始" })).toBeVisible();
     await expect(page.getByText("加载时间较长，请稍候…")).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        (await getRendererStartupOutcomeReports(page)).map(
+          ({ outcome, slowStage }) => ({ outcome, slowStage }),
+        ),
+      )
+      .toContainEqual({
+        outcome: "slow_recovered",
+        slowStage: "renderer-creation-slow",
+      });
   });
 
   test("GameBoard 动态导入较慢时单独分类且不会阻止后续加载", async ({ page }) => {

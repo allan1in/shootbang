@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { varToHex } from "@/lib/color";
 import { type TargetState, hideAllTargets } from "@/lib/grid";
 import { useR3FScene } from "@/hooks/useR3FBridge";
 
@@ -18,10 +17,11 @@ export function SceneBridge({ theme }: { theme?: string }) {
     cameraRef.current = camera as THREE.PerspectiveCamera;
     camera.rotation.order = "YXZ"; // eslint-disable-line react-hooks/immutability
 
-    const cs = getComputedStyle(document.documentElement);
-    const bgColor = theme === "thunderstorm" || theme === "blizzard" ? 0x0a0a0a : varToHex(cs, "--background");
+    const bgColor = 0x0a0a0a;
     scene.background = new THREE.Color(bgColor); // eslint-disable-line react-hooks/immutability
-    scene.fog = theme === "thunderstorm" ? new THREE.Fog(bgColor, 15, 80) : theme === "blizzard" ? new THREE.Fog(bgColor, 3, 80) : null;
+    scene.fog = theme === "blizzard"
+      ? new THREE.Fog(bgColor, 3, 80)
+      : new THREE.Fog(bgColor, 15, 80);
   }, [scene, camera, sceneRef, cameraRef, theme]);
 
   return null;
@@ -70,74 +70,6 @@ export function SceneLights() {
       {/* 地面反射：从下方向上微弱暖光，模拟地板弹射光 */}
       <directionalLight position={[0, -2, 8]} intensity={0.15} color={0x554433} />
     </>
-  );
-}
-
-// ---- RoomWalls: 6 walls + GridHelper overlays ----
-
-interface WallDef {
-  size: [number, number];
-  pos: [number, number, number];
-  rot: [number, number, number];
-  gridPos: [number, number, number];
-  gridRot: [number, number, number];
-}
-
-const WALLS: WallDef[] = [
-  // 地板
-  { size: [50, 50], pos: [0, -0.5, 12.5], rot: [-Math.PI / 2, 0, 0], gridPos: [0, -0.49, 12.5], gridRot: [0, 0, 0] },
-  // 天花板
-  { size: [50, 50], pos: [0, 13.5, 12.5], rot: [Math.PI / 2, 0, 0], gridPos: [0, 13.49, 12.5], gridRot: [0, 0, 0] },
-  // 后墙
-  { size: [50, 14], pos: [0, 6.5, -5], rot: [0, 0, 0], gridPos: [0, 6.5, -4.99], gridRot: [Math.PI / 2, 0, 0] },
-  // 前墙
-  { size: [50, 14], pos: [0, 6.5, 30], rot: [0, Math.PI, 0], gridPos: [0, 6.5, 29.99], gridRot: [Math.PI / 2, 0, 0] },
-  // 左墙
-  { size: [50, 14], pos: [-25, 6.5, 12.5], rot: [0, Math.PI / 2, 0], gridPos: [-24.99, 6.5, 12.5], gridRot: [0, 0, Math.PI / 2] },
-  // 右墙
-  { size: [50, 14], pos: [25, 6.5, 12.5], rot: [0, -Math.PI / 2, 0], gridPos: [24.99, 6.5, 12.5], gridRot: [0, 0, Math.PI / 2] },
-];
-
-const GRID_COLOR = 0x2a2a2e;
-
-export function RoomWalls({ theme }: { theme?: string }) {
-  const isStorm = theme === "thunderstorm";
-  const isBlizzard = theme === "blizzard";
-  const isWeatherTheme = isStorm || isBlizzard;
-  const wallColor = useMemo(() => {
-    if (isStorm) return 0x111111;
-    const cs = getComputedStyle(document.documentElement);
-    return varToHex(cs, "--card");
-  }, [isStorm]);
-
-  return (
-    <group>
-      {WALLS.map((w, i) => {
-        // 天气主题下隐藏所有墙面
-        if (isWeatherTheme) return null;
-        const size = w.size;
-        return (
-          <group key={i}>
-            <mesh
-              position={w.pos}
-              rotation={w.rot}
-              receiveShadow
-            >
-              <planeGeometry args={size as [number, number]} />
-              <meshStandardMaterial color={wallColor} roughness={0.9} metalness={0.1} />
-            </mesh>
-            {/* 天气主题下隐藏网格线 */}
-            {!isWeatherTheme && (
-              <gridHelper
-                args={[50, 50, GRID_COLOR, GRID_COLOR]}
-                position={w.gridPos}
-                rotation={w.gridRot}
-              />
-            )}
-          </group>
-        );
-      })}
-    </group>
   );
 }
 

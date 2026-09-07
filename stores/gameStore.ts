@@ -8,6 +8,11 @@ import {
   type SensitivityMode,
   type SensitivityValues,
 } from "@/lib/sensitivity";
+import {
+  DEFAULT_CROSSHAIR_SETTINGS,
+  normalizeCrosshairSettings,
+  type CrosshairSettings,
+} from "@/lib/crosshair";
 
 const TARGET_COUNT = 3;
 
@@ -24,6 +29,7 @@ interface SettingsState {
   volume: number;
   volumePreview: number | null;
   muted: boolean;
+  crosshair: CrosshairSettings;
   setSensitivitySettings: (
     mode: SensitivityMode,
     sensitivities: SensitivityValues,
@@ -34,6 +40,7 @@ interface SettingsState {
   setVolume: (volume: number) => void;
   setVolumePreview: (volume: number) => void;
   clearVolumePreview: () => void;
+  setCrosshair: (crosshair: CrosshairSettings) => void;
 }
 
 interface PersistedSettingsState {
@@ -45,6 +52,7 @@ interface PersistedSettingsState {
   targetSize?: string;
   volume?: number;
   muted?: boolean;
+  crosshair?: unknown;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -86,6 +94,7 @@ export const useSettingsStore = create<SettingsState>()(
       volume: 100,
       volumePreview: null,
       muted: false,
+      crosshair: { ...DEFAULT_CROSSHAIR_SETTINGS },
       setSensitivitySettings: (sensitivityMode, sensitivities) =>
         set({ sensitivityMode, sensitivities: { ...sensitivities } }),
       setGridSize: (v) => set({ gridSize: v, gridPositions: generateGridPositions(v) }),
@@ -99,6 +108,7 @@ export const useSettingsStore = create<SettingsState>()(
         volumePreview: Math.round(Math.min(100, Math.max(0, volume))),
       }),
       clearVolumePreview: () => set({ volumePreview: null }),
+      setCrosshair: (crosshair) => set({ crosshair: { ...crosshair } }),
     }),
     {
       name: "shootbang-settings",
@@ -131,6 +141,7 @@ export const useSettingsStore = create<SettingsState>()(
           volume,
           volumePreview: null,
           muted: volume === 0,
+          crosshair: normalizeCrosshairSettings(persisted?.crosshair),
         };
       },
       partialize: (state) => ({
@@ -141,6 +152,7 @@ export const useSettingsStore = create<SettingsState>()(
         targetSize: state.targetSize,
         volume: state.volume,
         muted: state.muted,
+        crosshair: { ...state.crosshair },
       }),
     },
   ),

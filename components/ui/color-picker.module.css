@@ -1,0 +1,28 @@
+.picker:global(.react-colorful) {
+  width: 100%;
+  height: 176px;
+  gap: 16px;
+}
+
+.picker :global(.react-colorful__saturation) {
+  border-radius: var(--radius-md);
+  border-bottom: 0;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 10%);
+}
+
+.picker :global(.react-colorful__hue) {
+  height: 10px;
+  border-radius: 999px;
+}
+
+.picker :global(.react-colorful__pointer) {
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 25%);
+}
+
+.picker :global(.react-colorful__interactive:focus-visible) :global(.react-colorful__pointer) {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}

@@ -6,6 +6,7 @@ import {
   TARGET_COUNT_CONST,
 } from "@/stores/gameStore";
 import type { SensitivityMode, SensitivityValues } from "@/lib/sensitivity";
+import type { CrosshairSettings } from "@/lib/crosshair";
 
 export function useSettings() {
   const sensitivityMode = useSettingsStore((s) => s.sensitivityMode);
@@ -14,10 +15,12 @@ export function useSettings() {
   const duration = useSettingsStore((s) => s.duration);
   const targetSize = useSettingsStore((s) => s.targetSize);
   const gridPositions = useSettingsStore((s) => s.gridPositions);
+  const crosshair = useSettingsStore((s) => s.crosshair);
   const setSensitivitySettings = useSettingsStore((s) => s.setSensitivitySettings);
   const setGridSize = useSettingsStore((s) => s.setGridSize);
   const setDuration = useSettingsStore((s) => s.setDuration);
   const setTargetSize = useSettingsStore((s) => s.setTargetSize);
+  const setCrosshair = useSettingsStore((s) => s.setCrosshair);
 
   // 临时设置状态（设置面板编辑中）
   const [showSettings, setShowSettings] = useState(false);
@@ -28,6 +31,9 @@ export function useSettings() {
   const [tempGridSize, setTempGridSize] = useState(gridSize);
   const [tempDuration, setTempDuration] = useState(duration);
   const [tempTargetSize, setTempTargetSize] = useState(targetSize);
+  const [tempCrosshair, setTempCrosshair] = useState<CrosshairSettings>({
+    ...crosshair,
+  });
 
   const openSettings = useCallback(() => {
     const s = useSettingsStore.getState();
@@ -36,6 +42,7 @@ export function useSettings() {
     setTempGridSize(s.gridSize);
     setTempDuration(s.duration);
     setTempTargetSize(s.targetSize);
+    setTempCrosshair({ ...s.crosshair });
     setShowSettings(true);
   }, []);
 
@@ -55,6 +62,7 @@ export function useSettings() {
     setGridSize(tempGridSize);
     setDuration(tempDuration);
     setTargetSize(tempTargetSize);
+    setCrosshair(tempCrosshair);
     setShowSettings(false);
   }, [
     tempSensitivityMode,
@@ -62,10 +70,12 @@ export function useSettings() {
     tempGridSize,
     tempDuration,
     tempTargetSize,
+    tempCrosshair,
     setSensitivitySettings,
     setGridSize,
     setDuration,
     setTargetSize,
+    setCrosshair,
   ]);
 
   return {
@@ -76,17 +86,20 @@ export function useSettings() {
     duration,
     targetSize,
     gridPositions,
+    crosshair,
     showSettings,
     tempSensitivityMode,
     tempSensitivities,
     tempGridSize,
     tempDuration,
     tempTargetSize,
+    tempCrosshair,
     setTempSensitivity,
     setTempSensitivityMode,
     setTempGridSize,
     setTempDuration,
     setTempTargetSize,
+    setTempCrosshair,
     openSettings,
     cancelSettings,
     saveSettings,

@@ -7,10 +7,9 @@ import {
   SceneBridge,
   CameraController,
   SceneLights,
-  RoomWalls,
   TargetPool,
 } from "./SceneSetup";
-import { Thunderstorm } from "./Thunderstorm";
+import { OvercastSky, Thunderstorm } from "./Thunderstorm";
 import { Blizzard } from "./Blizzard";
 import { FramePerformanceMonitor } from "./FramePerformanceMonitor";
 
@@ -66,8 +65,8 @@ export function SceneCanvas({
         <SceneBridge theme={theme} />
         <CameraController />
         <SceneLights />
-        <RoomWalls theme={theme} />
         <TargetPool gameState={gameState ?? "idle"} theme={theme} />
+        {theme !== "thunderstorm" && theme !== "blizzard" && <OvercastSky />}
         {theme === "thunderstorm" && <Thunderstorm />}
         {theme === "blizzard" && <Blizzard />}
         {children}
