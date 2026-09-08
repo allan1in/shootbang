@@ -15,7 +15,7 @@ app/page.tsx → MobileGate → GameBoard → SceneCanvas(three.js/r3f)
                     └→ MobilePrompt(移动端拦截提示)
 ```
 
-全链路 `"use client"`,无 SSR 内容,依赖 three.js / @react-three/fiber / @react-three/drei / tone.js 等重型库。此前没有任何性能监测手段,目标是:先建立检测体系拿到可信数据,再决定是否优化、优化什么。
+全链路 `"use client"`,无 SSR 内容,游戏依赖 three.js / @react-three/fiber 等库。此前没有任何性能监测手段,目标是:先建立检测体系拿到可信数据,再决定是否优化、优化什么。
 
 **核心原则(贯穿全程):先测量 → 再诊断 → 后优化,不凭感觉动手。**
 

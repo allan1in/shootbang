@@ -258,7 +258,7 @@ test.describe("反馈 Dialog", () => {
     await sendButton.evaluate((button) => (button as HTMLElement).click());
     releaseResponse();
 
-    await expect(page.getByText("反馈已发送，感谢你的反馈。")).toBeVisible();
+    await expect(page.getByText("发送成功，感谢你的反馈")).toBeVisible();
     await expect(dialog).not.toBeVisible();
     expect(requestCount).toBe(1);
     expect(capturedBody).not.toBeNull();
