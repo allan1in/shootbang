@@ -3,23 +3,24 @@ export interface CrosshairSettings {
   length: number;
   thickness: number;
   gap: number;
+  opacity: number;
   centerDot: boolean;
   outline: boolean;
 }
 
 export const CROSSHAIR_LIMITS = {
-  length: { min: 0, max: 20 },
-  thickness: { min: 0, max: 6 },
-  gap: { min: 0, max: 12 },
+  length: { min: 0, max: 20, step: 0.5 },
+  thickness: { min: 0, max: 6, step: 0.5 },
+  gap: { min: 0, max: 12, step: 0.5 },
+  opacity: { min: 0, max: 100, step: 5 },
 } as const;
-
-const CROSSHAIR_STEP = 0.5;
 
 export const DEFAULT_CROSSHAIR_SETTINGS: CrosshairSettings = {
   color: "#ffffff",
   length: 8,
   thickness: 2,
   gap: 0,
+  opacity: 100,
   centerDot: false,
   outline: false,
 };
@@ -32,12 +33,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function normalizeNumber(
   value: unknown,
-  limits: { readonly min: number; readonly max: number },
+  limits: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+  },
   fallback: number,
 ) {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   const clamped = Math.min(limits.max, Math.max(limits.min, value));
-  return Math.round(clamped / CROSSHAIR_STEP) * CROSSHAIR_STEP;
+  return Math.round(clamped / limits.step) * limits.step;
 }
 
 export function normalizeCrosshairSettings(value: unknown): CrosshairSettings {
@@ -64,6 +69,11 @@ export function normalizeCrosshairSettings(value: unknown): CrosshairSettings {
       settings?.gap,
       CROSSHAIR_LIMITS.gap,
       DEFAULT_CROSSHAIR_SETTINGS.gap,
+    ),
+    opacity: normalizeNumber(
+      settings?.opacity,
+      CROSSHAIR_LIMITS.opacity,
+      DEFAULT_CROSSHAIR_SETTINGS.opacity,
     ),
     centerDot:
       typeof settings?.centerDot === "boolean"

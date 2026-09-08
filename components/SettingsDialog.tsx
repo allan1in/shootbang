@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,6 +30,7 @@ import {
   CROSSHAIR_LIMITS,
   type CrosshairSettings,
 } from "@/lib/crosshair";
+import { GAME_BACKGROUND_COLOR, TARGET_COLOR } from "@/lib/sceneColors";
 import {
   getSensitivityRange,
   isSensitivityMode,
@@ -43,6 +44,58 @@ const THEMES: { key: Theme; name: string; description: string }[] = [
   { key: "thunderstorm", name: "雷雨", description: "闪电会短暂致盲" },
   { key: "blizzard", name: "暴雪", description: "风暴会遮挡视线" },
 ];
+
+type CrosshairPreviewBackground = "dark" | "light";
+
+function CrosshairPreview({
+  settings,
+  background,
+  onToggleBackground,
+}: {
+  settings: CrosshairSettings;
+  background: CrosshairPreviewBackground;
+  onToggleBackground: () => void;
+}) {
+  const isLight = background === "light";
+  const toggleLabel = isLight ? "切换为深色背景" : "切换为浅色背景";
+
+  return (
+    <div
+      data-crosshair-preview
+      data-preview-background={background}
+      className="relative flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
+      style={{
+        backgroundColor: isLight ? TARGET_COLOR : GAME_BACKGROUND_COLOR,
+        "--preview-toggle-color": isLight ? "#09090b" : "#ffffff",
+        "--preview-toggle-background": isLight
+          ? "rgba(0, 0, 0, 0.24)"
+          : "rgba(0, 0, 0, 0.35)",
+        "--preview-toggle-border": isLight
+          ? "rgba(0, 0, 0, 0.45)"
+          : "rgba(255, 255, 255, 0.2)",
+      } as React.CSSProperties}
+    >
+      <CrosshairGraphic settings={settings} />
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="outline"
+        aria-label={toggleLabel}
+        aria-pressed={isLight}
+        data-preview-background-toggle
+        onClick={onToggleBackground}
+        className="absolute top-2 right-2 shadow-xs backdrop-blur-sm"
+        style={{
+          color: "var(--preview-toggle-color)",
+          backgroundColor: "var(--preview-toggle-background)",
+          borderColor: "var(--preview-toggle-border)",
+        }}
+      >
+        {isLight ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+      </Button>
+    </div>
+  );
+}
 
 interface SettingsDialogProps {
   open: boolean;
@@ -91,11 +144,12 @@ export const SettingsDialog = React.memo(function SettingsDialog({
     String(tempSensitivities[tempSensitivityMode]),
   );
   const sensitivityRange = getSensitivityRange(tempSensitivityMode);
-  const [inputMode, setInputMode] = useState(tempSensitivityMode);
   const wasOpenRef = useRef(false);
   const [colorPage, setColorPage] = useState(false);
   const [colorDraft, setColorDraft] = useState(tempCrosshair.color);
   const [activeTab, setActiveTab] = useState("training");
+  const [previewBackground, setPreviewBackground] =
+    useState<CrosshairPreviewBackground>("dark");
   const colorButtonRef = useRef<HTMLButtonElement>(null);
   const colorTitleRef = useRef<HTMLButtonElement>(null);
   const returningFromColor = useRef(false);
@@ -120,6 +174,12 @@ export const SettingsDialog = React.memo(function SettingsDialog({
     setColorPage(true);
   };
 
+  const togglePreviewBackground = () => {
+    setPreviewBackground((current) =>
+      current === "dark" ? "light" : "dark",
+    );
+  };
+
   useEffect(() => {
     if (colorPage) colorTitleRef.current?.focus();
     else if (returningFromColor.current) {
@@ -134,17 +194,9 @@ export const SettingsDialog = React.memo(function SettingsDialog({
       setColorDraft(tempCrosshair.color);
       setActiveTab("training");
       setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
-      setInputMode(tempSensitivityMode);
     }
     wasOpenRef.current = open;
   }, [open, tempCrosshair.color, tempSensitivities, tempSensitivityMode]);
-
-  useEffect(() => {
-    if (tempSensitivityMode !== inputMode) {
-      setSensitivityInput(String(tempSensitivities[tempSensitivityMode]));
-      setInputMode(tempSensitivityMode);
-    }
-  }, [inputMode, tempSensitivities, tempSensitivityMode]);
 
   const commitSensitivity = () => {
     const normalized = normalizeSensitivityForMode(
@@ -177,6 +229,7 @@ export const SettingsDialog = React.memo(function SettingsDialog({
   const handleModeChange = (value: SensitivityMode | null) => {
     if (!isSensitivityMode(value) || value === tempSensitivityMode) return;
     commitSensitivity();
+    setSensitivityInput(String(tempSensitivities[value]));
     setTempSensitivityMode(value);
   };
 
@@ -220,18 +273,11 @@ export const SettingsDialog = React.memo(function SettingsDialog({
 
         {colorPage ? (
           <div className="flex h-[19.625rem] flex-col gap-4">
-            <div
-              data-crosshair-preview
-              className="flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
-              style={{
-                background:
-                  "radial-gradient(circle at center, color-mix(in oklch, color-mix(in oklch, var(--muted) 80%, var(--foreground) 20%) 80%, transparent) 0%, color-mix(in oklch, var(--background) 30%, transparent) 100%)",
-              }}
-            >
-              <CrosshairGraphic
-                settings={{ ...tempCrosshair, color: colorDraft }}
-              />
-            </div>
+            <CrosshairPreview
+              settings={{ ...tempCrosshair, color: colorDraft }}
+              background={previewBackground}
+              onToggleBackground={togglePreviewBackground}
+            />
             <ColorPicker
               color={colorDraft}
               onChange={setColorDraft}
@@ -330,16 +376,11 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             value="crosshair"
             className="flex h-[16.375rem] flex-none flex-col gap-4"
           >
-            <div
-              data-crosshair-preview
-              className="flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
-              style={{
-                background:
-                  "radial-gradient(circle at center, color-mix(in oklch, color-mix(in oklch, var(--muted) 80%, var(--foreground) 20%) 80%, transparent) 0%, color-mix(in oklch, var(--background) 30%, transparent) 100%)",
-              }}
-            >
-              <CrosshairGraphic settings={tempCrosshair} />
-            </div>
+            <CrosshairPreview
+              settings={tempCrosshair}
+              background={previewBackground}
+              onToggleBackground={togglePreviewBackground}
+            />
 
             <div className="flex flex-none flex-col gap-4">
               {(
@@ -347,20 +388,24 @@ export const SettingsDialog = React.memo(function SettingsDialog({
                   ["length", "长度", CROSSHAIR_LIMITS.length],
                   ["thickness", "粗细", CROSSHAIR_LIMITS.thickness],
                   ["gap", "间距", CROSSHAIR_LIMITS.gap],
+                  ["opacity", "透明", CROSSHAIR_LIMITS.opacity],
                 ] as const
               ).map(([key, label, limits]) => (
                 <div key={key} className="flex items-center gap-2">
                   <Label className="w-8 flex-none">{label}</Label>
                   <Slider
+                    className="min-w-0 flex-1"
                     value={tempCrosshair[key]}
                     min={limits.min}
                     max={limits.max}
-                    step={0.5}
+                    step={limits.step}
                     onValueChange={(value) => updateCrosshair(key, value)}
                     getAriaLabel={() => `准星${label}`}
                   />
                   <span className="w-7 flex-none text-right text-xs tabular-nums text-muted-foreground">
-                    {tempCrosshair[key].toFixed(1)}
+                    {key === "opacity"
+                      ? tempCrosshair[key]
+                      : tempCrosshair[key].toFixed(1)}
                   </span>
                 </div>
               ))}

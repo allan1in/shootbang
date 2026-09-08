@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { type TargetState, hideAllTargets } from "@/lib/grid";
+import { GAME_BACKGROUND_COLOR, TARGET_COLOR } from "@/lib/sceneColors";
 import { useR3FScene } from "@/hooks/useR3FBridge";
 
 // ---- SceneBridge: populates sceneRef/cameraRef from R3F internals ----
@@ -17,7 +18,7 @@ export function SceneBridge({ theme }: { theme?: string }) {
     cameraRef.current = camera as THREE.PerspectiveCamera;
     camera.rotation.order = "YXZ"; // eslint-disable-line react-hooks/immutability
 
-    const bgColor = 0x0a0a0a;
+    const bgColor = GAME_BACKGROUND_COLOR;
     scene.background = new THREE.Color(bgColor); // eslint-disable-line react-hooks/immutability
     scene.fog = theme === "blizzard"
       ? new THREE.Fog(bgColor, 3, 80)
@@ -75,10 +76,10 @@ export function SceneLights() {
 
 // ---- TargetPool: 10 sphere meshes (R3F-managed via JSX, ref callback) ----
 
-const SPHERE_COLORS: Record<string, number> = {
-  default: 0xc8cdd2,
-  thunderstorm: 0xc8cdd2,
-  blizzard: 0xc8cdd2,
+const SPHERE_COLORS: Record<string, string> = {
+  default: TARGET_COLOR,
+  thunderstorm: TARGET_COLOR,
+  blizzard: TARGET_COLOR,
 };
 const MAX_TARGETS = 10;
 
@@ -111,7 +112,7 @@ function TargetSphere({
 }: {
   index: number;
   targetsRef: React.MutableRefObject<TargetState[]>;
-  color: number;
+  color: string;
   transparent?: boolean;
 }) {
   return (

@@ -3,7 +3,6 @@ import type { CrosshairSettings } from "@/lib/crosshair";
 
 const VIEWBOX_SIZE = 64;
 const VIEWBOX_HALF = VIEWBOX_SIZE / 2;
-const CROSSHAIR_OPACITY = 0.7;
 const OUTLINE_WIDTH = 2;
 
 interface CrosshairGraphicProps {
@@ -57,7 +56,6 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
     sourceLines: typeof lines,
     stroke: string,
     strokeWidth: number,
-    opacity = 1,
     outline = false,
   ) => (
     <g
@@ -66,7 +64,6 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
       stroke={stroke}
       strokeWidth={strokeWidth}
       strokeLinecap="butt"
-      opacity={opacity}
     >
       {sourceLines.map((line, index) => (
         <line key={index} {...line} />
@@ -83,8 +80,10 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
       data-length={settings.length}
       data-thickness={settings.thickness}
       data-gap={settings.gap}
+      data-opacity={settings.opacity}
       data-center-dot={settings.centerDot}
       data-outline={settings.outline}
+      opacity={settings.opacity / 100}
       width={VIEWBOX_SIZE}
       height={VIEWBOX_SIZE}
       viewBox={`${-VIEWBOX_HALF} ${-VIEWBOX_HALF} ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
@@ -95,7 +94,6 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
           outlineLines,
           "#000000",
           settings.thickness + OUTLINE_WIDTH,
-          1,
           true,
         )}
       {showLines &&
@@ -103,7 +101,6 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
           lines,
           settings.color,
           settings.thickness,
-          CROSSHAIR_OPACITY,
         )}
       {settings.centerDot && settings.outline && (
         <rect
@@ -123,7 +120,6 @@ export const CrosshairGraphic = React.memo(function CrosshairGraphic({
           width={centerDotSize}
           height={centerDotSize}
           fill={settings.color}
-          opacity={CROSSHAIR_OPACITY}
         />
       )}
     </svg>

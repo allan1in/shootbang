@@ -761,26 +761,52 @@ test.describe("设置面板", () => {
 
   test("准星设置实时预览，取消后丢弃草稿", async ({ page }) => {
     await page.getByRole("tab", { name: "准星" }).click();
+    const preview = page.locator("[data-crosshair-preview]");
     const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+
+    await expect(preview).toHaveAttribute("data-preview-background", "dark");
+    await expect(preview).toHaveCSS(
+      "background-color",
+      "rgb(10, 10, 10)",
+    );
+    const backgroundToggle = page.getByRole("button", {
+      name: "切换为浅色背景",
+    });
+    await expect(backgroundToggle).toHaveAttribute("aria-pressed", "false");
+    await backgroundToggle.click();
+    await expect(preview).toHaveAttribute("data-preview-background", "light");
+    await expect(preview).toHaveCSS(
+      "background-color",
+      "rgb(200, 205, 210)",
+    );
+    await expect(
+      page.getByRole("button", { name: "切换为深色背景" }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     await expect(graphic).toHaveAttribute("data-color", "#ffffff");
     await expect(graphic).toHaveAttribute("data-length", "8");
     await expect(graphic).toHaveAttribute("data-thickness", "2");
     await expect(graphic).toHaveAttribute("data-gap", "0");
+    await expect(graphic).toHaveAttribute("data-opacity", "100");
 
     const lengthSlider = page.getByRole("slider", { name: "准星长度" });
     const thicknessSlider = page.getByRole("slider", { name: "准星粗细" });
     const gapSlider = page.getByRole("slider", { name: "准星间距" });
+    const opacitySlider = page.getByRole("slider", { name: "准星透明" });
     await expect(lengthSlider).toHaveAttribute("min", "0");
     await expect(lengthSlider).toHaveAttribute("max", "20");
     await expect(lengthSlider).toHaveAttribute("step", "0.5");
     await expect(thicknessSlider).toHaveAttribute("min", "0");
     await expect(thicknessSlider).toHaveAttribute("step", "0.5");
     await expect(gapSlider).toHaveAttribute("step", "0.5");
+    await expect(opacitySlider).toHaveAttribute("min", "0");
+    await expect(opacitySlider).toHaveAttribute("max", "100");
+    await expect(opacitySlider).toHaveAttribute("step", "5");
     await lengthSlider.fill("0");
     await expect(graphic).toHaveAttribute("data-length", "0");
 
     await page.getByRole("button", { name: "调整颜色" }).click();
+    await expect(preview).toHaveAttribute("data-preview-background", "light");
     await page.getByLabel("准星颜色 R", { exact: true }).fill("85");
     await page.getByLabel("准星颜色 G", { exact: true }).fill("231");
     await page.getByLabel("准星颜色 B", { exact: true }).fill("255");
@@ -788,6 +814,7 @@ test.describe("设置面板", () => {
     await lengthSlider.fill("12.5");
     await thicknessSlider.fill("2.5");
     await gapSlider.fill("4.5");
+    await opacitySlider.fill("65");
     await page.getByRole("button", { name: "中心点" }).click();
     await page.getByRole("button", { name: "黑色描边" }).click();
 
@@ -795,6 +822,8 @@ test.describe("设置面板", () => {
     await expect(graphic).toHaveAttribute("data-length", "12.5");
     await expect(graphic).toHaveAttribute("data-thickness", "2.5");
     await expect(graphic).toHaveAttribute("data-gap", "4.5");
+    await expect(graphic).toHaveAttribute("data-opacity", "65");
+    await expect(graphic).toHaveAttribute("opacity", "0.65");
     await expect(graphic).toHaveAttribute("data-center-dot", "true");
     await expect(graphic).toHaveAttribute("data-outline", "true");
     await expect(graphic.locator("[data-crosshair-center-dot]")).toHaveCount(1);
@@ -824,6 +853,7 @@ test.describe("设置面板", () => {
     await page.getByRole("tab", { name: "准星" }).click();
     await expect(graphic).toHaveAttribute("data-color", "#ffffff");
     await expect(graphic).toHaveAttribute("data-length", "8");
+    await expect(graphic).toHaveAttribute("data-opacity", "100");
     await expect(page.getByRole("button", { name: "中心点" })).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByRole("button", { name: "黑色描边" })).toHaveAttribute("aria-pressed", "false");
   });
@@ -910,6 +940,7 @@ test.describe("设置面板", () => {
     await page.getByRole("slider", { name: "准星长度" }).fill("10.5");
     await page.getByRole("slider", { name: "准星粗细" }).fill("3.5");
     await page.getByRole("slider", { name: "准星间距" }).fill("6.5");
+    await page.getByRole("slider", { name: "准星透明" }).fill("75");
     await page.getByRole("button", { name: "中心点" }).click();
     await page.getByRole("button", { name: "黑色描边" }).click();
     await page.getByRole("button", { name: "保存" }).click();
@@ -923,6 +954,7 @@ test.describe("设置面板", () => {
       length: 10.5,
       thickness: 3.5,
       gap: 6.5,
+      opacity: 75,
       centerDot: true,
       outline: true,
     });
@@ -936,6 +968,8 @@ test.describe("设置面板", () => {
     await expect(graphic).toHaveAttribute("data-length", "10.5");
     await expect(graphic).toHaveAttribute("data-thickness", "3.5");
     await expect(graphic).toHaveAttribute("data-gap", "6.5");
+    await expect(graphic).toHaveAttribute("data-opacity", "75");
+    await expect(graphic).toHaveAttribute("opacity", "0.75");
     await expect(page.getByRole("button", { name: "中心点" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "黑色描边" })).toHaveAttribute("aria-pressed", "true");
   });
