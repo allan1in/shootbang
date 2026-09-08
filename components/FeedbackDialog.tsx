@@ -136,7 +136,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         return;
       }
 
-      toast.success("反馈已发送，感谢你的反馈。");
+      toast.success("发送成功，感谢你的反馈");
       closeDialog();
     } catch (error) {
       if (
