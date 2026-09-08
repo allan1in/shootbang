@@ -63,7 +63,7 @@ function CrosshairPreview({
     <div
       data-crosshair-preview
       data-preview-background={background}
-      className="relative flex min-h-16 flex-1 items-center justify-center rounded-lg border border-border"
+      className="relative flex h-[5.625rem] flex-none items-center justify-center rounded-lg border border-border transition-[background-color] duration-300 ease-out motion-reduce:transition-none"
       style={{
         backgroundColor: isLight ? TARGET_COLOR : GAME_BACKGROUND_COLOR,
         "--preview-toggle-color": isLight ? "#09090b" : "#ffffff",
@@ -84,14 +84,29 @@ function CrosshairPreview({
         aria-pressed={isLight}
         data-preview-background-toggle
         onClick={onToggleBackground}
-        className="absolute top-2 right-2 shadow-xs backdrop-blur-sm"
+        className="absolute top-2 right-2 shadow-xs backdrop-blur-sm transition-[color,background-color,border-color,transform] duration-300 ease-out motion-reduce:transition-none"
         style={{
           color: "var(--preview-toggle-color)",
           backgroundColor: "var(--preview-toggle-background)",
           borderColor: "var(--preview-toggle-border)",
         }}
       >
-        {isLight ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+        <Sun
+          aria-hidden="true"
+          className={`absolute transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none ${
+            isLight
+              ? "scale-100 rotate-0 opacity-100"
+              : "scale-75 -rotate-90 opacity-0"
+          }`}
+        />
+        <Moon
+          aria-hidden="true"
+          className={`absolute transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none ${
+            isLight
+              ? "scale-75 rotate-90 opacity-0"
+              : "scale-100 rotate-0 opacity-100"
+          }`}
+        />
       </Button>
     </div>
   );

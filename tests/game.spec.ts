@@ -763,8 +763,10 @@ test.describe("设置面板", () => {
     await page.getByRole("tab", { name: "准星" }).click();
     const preview = page.locator("[data-crosshair-preview]");
     const graphic = page.locator("[data-crosshair-preview] [data-crosshair-graphic]");
+    const primaryPreview = (await preview.boundingBox())!;
 
     await expect(preview).toHaveAttribute("data-preview-background", "dark");
+    await expect(preview).toHaveCSS("transition-duration", "0.3s");
     await expect(preview).toHaveCSS(
       "background-color",
       "rgb(10, 10, 10)",
@@ -772,6 +774,7 @@ test.describe("设置面板", () => {
     const backgroundToggle = page.getByRole("button", {
       name: "切换为浅色背景",
     });
+    await expect(backgroundToggle).toHaveCSS("transition-duration", "0.3s");
     await expect(backgroundToggle).toHaveAttribute("aria-pressed", "false");
     await backgroundToggle.click();
     await expect(preview).toHaveAttribute("data-preview-background", "light");
@@ -806,6 +809,8 @@ test.describe("设置面板", () => {
     await expect(graphic).toHaveAttribute("data-length", "0");
 
     await page.getByRole("button", { name: "调整颜色" }).click();
+    const colorPreview = (await preview.boundingBox())!;
+    expect(Math.abs(primaryPreview.height - colorPreview.height)).toBeLessThanOrEqual(0.1);
     await expect(preview).toHaveAttribute("data-preview-background", "light");
     await page.getByLabel("准星颜色 R", { exact: true }).fill("85");
     await page.getByLabel("准星颜色 G", { exact: true }).fill("231");
