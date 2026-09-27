@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { captureAnalytics } from "@/lib/analytics";
 import { ChevronRight, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -299,7 +300,10 @@ export const SettingsDialog = React.memo(function SettingsDialog({
             />
           </div>
         ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          setActiveTab(tab);
+          captureAnalytics("settings tab viewed", { tab });
+        }} className="gap-4">
           <TabsList
             aria-label="设置分类"
             className="w-full bg-muted/50 group-data-horizontal/tabs:h-9"

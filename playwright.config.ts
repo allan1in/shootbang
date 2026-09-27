@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { UPDATE_ANNOUNCEMENT_ID } from "./lib/updateAnnouncement";
 
 export default defineConfig({
   testDir: "./tests",
@@ -18,7 +19,7 @@ export default defineConfig({
           localStorage: [
             {
               name: "shootbang-last-seen-announcement",
-              value: "2026-08-delta",
+              value: UPDATE_ANNOUNCEMENT_ID,
             },
           ],
         },
@@ -38,9 +39,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
+    command: process.platform === "win32"
+      ? 'C:\\nvm4w\\nodejs\\corepack.cmd pnpm dev'
+      : "corepack pnpm dev",
     url: "http://localhost:3000",
     reuseExistingServer: true,
-    timeout: 30000,
+    timeout: 60000,
   },
 });

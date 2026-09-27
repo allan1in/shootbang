@@ -54,6 +54,8 @@ pnpm dev
 | `RESEND_API_KEY` | Resend 服务端 API Key |
 | `FEEDBACK_FROM_EMAIL` | 已验证域名下的反馈发件地址 |
 | `FEEDBACK_TO_EMAIL` | 接收用户反馈的邮箱 |
+| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | 可选，PostHog 项目公开采集 token |
+| `NEXT_PUBLIC_POSTHOG_HOST` | 可选，PostHog 项目所在区域的 ingestion host |
 
 反馈接口的限流规则在 Vercel Firewall 中配置，不需要环境变量。推荐仅匹配 `POST /api/feedback`，按 IP 在 10 分钟内最多允许 5 次请求。
 
@@ -103,6 +105,7 @@ docs/                       # 工程设计与实现记录
 - [首屏加载优化](docs/loading.md)
 - [错误监控与反馈系统](docs/feedback.md)
 - [SEO 与搜索可发现性](docs/seo.md)
+- [产品埋点、行为分析与留存](docs/analytics.md)
 
 ## 测试说明
 

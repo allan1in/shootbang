@@ -36,8 +36,7 @@ export function UpdateAnnouncementDialog({
         </DialogHeader>
 
         <ul className="space-y-3 text-sm">
-          <li>• 统一默认主题体验</li>
-          <li>• 新增准星自定义</li>
+          <li>• 训练结束新增提示</li>
         </ul>
 
         <Button

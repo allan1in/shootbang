@@ -1,6 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
+import { captureAnalytics } from "@/lib/analytics";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import {
   claimRendererStartupFailureReport,
@@ -30,6 +31,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const activeStartup = getRendererStartupDiagnosticsSnapshot();
     if (activeStartup) {
       const failureStage = activeStartup.failure?.stage ?? "react-render";
+      captureAnalytics("renderer failed", { stage: failureStage }, "renderer-failed");
       markRendererStartupFailure(failureStage, error);
       const snapshot = claimRendererStartupFailureReport(failureStage, error);
       if (snapshot) {

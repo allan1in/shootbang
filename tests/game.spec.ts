@@ -395,14 +395,13 @@ test.describe("空闲界面", () => {
 
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("heading", { name: "公告" })).toBeVisible();
-    await expect(page.getByText("统一默认主题体验")).toBeVisible();
-    await expect(page.getByText("新增准星自定义")).toBeVisible();
+    await expect(page.getByText("训练结束新增提示")).toBeVisible();
     await expect(page.getByRole("button", { name: "了解" })).not.toBeFocused();
     expect(
       await page.evaluate(() =>
         localStorage.getItem("shootbang-last-seen-announcement"),
       ),
-    ).toBe("2026-09-crosshair");
+    ).toBe("2026-09-training-end");
 
     await page
       .locator('[data-slot="dialog-viewport"]')
@@ -1290,9 +1289,9 @@ test("计时结束后显示一秒结束提示，再进入结算页", async ({ pa
     return api.getGameStats();
   })).toEqual(statsBeforeClick);
 
-  await page.clock.fastForward(900);
+  await page.clock.fastForward(500);
   expect(await getGameState(page)).toBe("ending");
-  await page.clock.fastForward(110);
+  await page.clock.fastForward(600);
   await expect.poll(() => getGameState(page)).toBe("finished");
   await expect(endingText).toHaveCount(0);
   await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();

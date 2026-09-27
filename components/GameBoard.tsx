@@ -22,6 +22,8 @@ import { SceneCanvas } from "@/components/r3f/SceneCanvas";
 import { toast } from "sonner";
 import { setMasterVolume } from "@/lib/sounds";
 import { markRendererStartupStage } from "@/lib/rendererStartupDiagnostics";
+import { captureAnalytics } from "@/lib/analytics";
+import { getTrainingProperties } from "@/lib/trainingAnalytics";
 import {
   UPDATE_ANNOUNCEMENT_ID,
   UPDATE_ANNOUNCEMENT_STORAGE_KEY,
@@ -63,6 +65,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   const [tempVolume, setTempVolumeDraft] = useState(volume);
 
   const openSettings = useCallback(() => {
+    captureAnalytics("settings opened", {});
     openTrainingSettings();
     clearVolumePreview();
     setTempTheme(theme);
@@ -70,6 +73,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   }, [clearVolumePreview, openTrainingSettings, theme, volume]);
 
   const cancelSettings = useCallback(() => {
+    captureAnalytics("settings dismissed", {});
     clearVolumePreview();
     cancelTrainingSettings();
   }, [cancelTrainingSettings, clearVolumePreview]);
@@ -80,10 +84,22 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
   }, [setVolumePreview]);
 
   const saveSettings = useCallback(() => {
+    const before = useSettingsStore.getState();
+    const changedFields = [
+      ...(before.sensitivityMode !== settings.tempSensitivityMode ? ["sensitivity_mode"] : []),
+      ...(JSON.stringify(before.sensitivities) !== JSON.stringify(settings.tempSensitivities) ? ["sensitivity"] : []),
+      ...(before.duration !== settings.tempDuration ? ["duration"] : []),
+      ...(before.gridSize !== settings.tempGridSize ? ["grid_size"] : []),
+      ...(before.targetSize !== settings.tempTargetSize ? ["target_size"] : []),
+      ...(JSON.stringify(before.crosshair) !== JSON.stringify(settings.tempCrosshair) ? ["crosshair"] : []),
+      ...(theme !== tempTheme ? ["theme"] : []),
+      ...(before.volume !== tempVolume ? ["volume"] : []),
+    ];
     saveTrainingSettings();
     setTheme(tempTheme);
     setVolume(tempVolume);
-  }, [saveTrainingSettings, setTheme, setVolume, tempTheme, tempVolume]);
+    captureAnalytics("settings saved", { ...getTrainingProperties(), changed_fields: changedFields });
+  }, [saveTrainingSettings, setTheme, setVolume, tempTheme, tempVolume, settings, theme]);
 
   const game = useGameLogic({
     targetsRef: bridge.targetsRef,
@@ -92,7 +108,12 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
     mouseAccum: bridge.mouseAccum,
     containerRef: bridge.canvasRef,
   });
-  const { triggerStart, triggerResume } = game;
+  const { triggerStart, triggerResume, abandonTraining } = game;
+
+  const openFeedback = useCallback(() => {
+    captureAnalytics("feedback opened", { source: useGameStore.getState().gameState });
+    setFeedbackOpen(true);
+  }, []);
 
   const showUpdateAnnouncement = useCallback(() => {
     if (announcementCheckedRef.current) return;
@@ -116,9 +137,10 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
 
   // 稳定回调
   const handlePauseHome = useCallback(() => {
+    abandonTraining("home");
     document.exitPointerLock();
     useGameStore.getState().setGameState("idle");
-  }, []);
+  }, [abandonTraining]);
 
   const handlePauseRestart = useCallback(() => {
     document.exitPointerLock();
@@ -169,7 +191,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
           onHome={handlePauseHome}
           onRestart={handlePauseRestart}
           onResume={triggerResume}
-          onOpenFeedback={() => setFeedbackOpen(true)}
+          onOpenFeedback={openFeedback}
         />
       )}
 
@@ -178,7 +200,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
         <IdleScreen
           onStart={triggerStart}
           onOpenSettings={openSettings}
-          onOpenFeedback={() => setFeedbackOpen(true)}
+          onOpenFeedback={openFeedback}
         />
       )}
 
@@ -212,7 +234,7 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
           stats={game.gameStats}
           onRestart={triggerStart}
           onHome={handleFinishedHome}
-          onOpenFeedback={() => setFeedbackOpen(true)}
+          onOpenFeedback={openFeedback}
         />
       )}
 

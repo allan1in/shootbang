@@ -6,6 +6,7 @@ import { useMobileDetect } from "@/hooks/useMobileDetect";
 import { useWebGLSupport } from "@/hooks/useWebGLSupport";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MobilePrompt } from "@/components/MobilePrompt";
+import { captureAnalytics } from "@/lib/analytics";
 import {
   getRendererSlowThresholdMs,
   installRendererStartupTestAccess,
@@ -55,6 +56,7 @@ export function MobileGate() {
   useEffect(() => {
     if (!ready || isMobile) return;
 
+    captureAnalytics("desktop visit eligible", {}, "desktop-eligible");
     startRendererStartupAttempt();
     markRendererStartupStage("device-check-completed");
     installRendererStartupTestAccess();
@@ -65,10 +67,15 @@ export function MobileGate() {
 
   const webGLStatus = useWebGLSupport(ready && !isMobile);
 
+  useEffect(() => {
+    if (ready && isMobile) captureAnalytics("mobile prompt shown", {}, "mobile-prompt");
+  }, [ready, isMobile]);
+
   const completeRendererStartup = useCallback(() => {
     markRendererStartupStage("renderer-created");
     finishRendererStartupAttempt();
     setRendererReady(true);
+    captureAnalytics("renderer ready", { elapsed_ms: Math.round(performance.now()) }, "renderer-ready");
   }, []);
 
   const handleRendererReady = useCallback(() => {
