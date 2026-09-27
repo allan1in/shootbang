@@ -160,7 +160,7 @@ export const useSettingsStore = create<SettingsState>()(
 
 // ============ Game State ============
 
-export type GameState = "idle" | "playing" | "finished";
+export type GameState = "idle" | "playing" | "ending" | "finished";
 
 export interface GameStats {
   hits: number;

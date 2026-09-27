@@ -13,6 +13,8 @@ export type { GameStats } from "@/stores/gameStore";
 import { playHitSound, playMissSound, playCountdownSound } from "@/lib/sounds";
 import { type TargetState, spawnTarget, hideAllTargets } from "@/lib/grid";
 import { getDegreesPerCount, getRadiansPerCount } from "@/lib/sensitivity";
+import { captureAnalytics, type AnalyticsEvents } from "@/lib/analytics";
+import { getTrainingProperties } from "@/lib/trainingAnalytics";
 
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const TARGET_SIZE_MAP: Record<string, number> = { tiny: 0.135, small: 0.27, default: 0.405, large: 0.54, huge: 0.675 };
@@ -46,6 +48,18 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   const pointerInputModeRef = useRef<PointerInputMode>("none");
   const pointerLockRequestIdRef = useRef(0);
   const pointerLockRequestCleanupRef = useRef<(() => void) | null>(null);
+  const analyticsRunRef = useRef<AnalyticsEvents["training started"] | null>(null);
+
+  const abandonTraining = useCallback((reason: "home" | "restart") => {
+    const run = analyticsRunRef.current;
+    if (!run) return;
+    analyticsRunRef.current = null;
+    captureAnalytics("training abandoned", {
+      ...run,
+      reason,
+      active_seconds: Math.round(Math.max(0, run.duration - timeLeftRef.current) * 10) / 10,
+    });
+  }, []);
 
   const hitsRef = useRef(0);
   const shotsRef = useRef(0);
@@ -75,7 +89,6 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         sensitivities[sensitivityMode],
       );
       // R3F bridge intentionally keeps camera rotation in a mutable ref per frame.
-      // eslint-disable-next-line react-hooks/immutability
       mouseAccum.current.x -= movementX * radiansPerCount;
       mouseAccum.current.y = Math.max(
         -Math.PI / 2,
@@ -89,10 +102,9 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   );
 
   // 鼠标移动 + 指针锁定事件
-  // eslint-disable-next-line react-hooks/immutability
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement) {
+      if (document.pointerLockElement && useGameStore.getState().gameState === "playing") {
         applyMouseMovement(e.movementX, e.movementY);
       }
     };
@@ -125,7 +137,11 @@ export function useGameLogic(deps: UseGameLogicDeps) {
 
   // 开始游戏
   const startGame = useCallback(() => {
+    abandonTraining("restart");
     const s = useSettingsStore.getState();
+    const run = { ...getTrainingProperties(), run_id: crypto.randomUUID(), pointer_input_mode: pointerInputModeRef.current };
+    analyticsRunRef.current = run;
+    captureAnalytics("training started", run);
     useGameStore.getState().setGameState("playing");
     timeLeftRef.current = s.duration;
     setTimeLeft(s.duration);
@@ -135,7 +151,6 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     lastHitActiveTimeRef.current = 0;
     hitIntervalsRef.current = [];
 
-    /* eslint-disable react-hooks/immutability */
     hideAllTargets(targetsRef.current);
     for (const t of targetsRef.current) t.gridIndex = -1;
     const count = Math.min(s.targetCount, targetsRef.current.length);
@@ -150,8 +165,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
         s.targetCount,
       );
     }
-    /* eslint-enable react-hooks/immutability */
-  }, [targetsRef]);
+  }, [targetsRef, abandonTraining]);
 
   // 倒计时
   const startCountdown = useCallback(() => {
@@ -173,7 +187,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   }, [setCountdown]);
 
   const requestLockAndResume = useCallback(
-    (onLocked: () => void) => {
+    (onLocked: () => void, startSource?: string) => {
       const container = containerRef.current;
       if (!container) return;
 
@@ -270,7 +284,11 @@ export function useGameLogic(deps: UseGameLogicDeps) {
           if (!isCurrentRequest()) return;
           void requestPointerLock()
             .then(() => completeLock("standard"))
-            .catch(() => {});
+            .catch(() => {
+              if (isCurrentRequest() && startSource) {
+                captureAnalytics("training start failed", { source: startSource, reason: "pointer_lock" });
+              }
+            });
         });
     },
     [startCountdown, containerRef],
@@ -285,7 +303,9 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   );
 
   const triggerStart = useCallback(() => {
-    requestLockAndResume(startGame);
+    const source = useGameStore.getState().gameState;
+    captureAnalytics("training start requested", { source });
+    requestLockAndResume(startGame, source);
   }, [requestLockAndResume, startGame]);
 
   const triggerResume = useCallback(() => {
@@ -425,6 +445,19 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     return () => window.removeEventListener("mousedown", handleMouseDown);
   }, []);
 
+  // 保留场景一秒展示结束提示，随后进入结算页。
+  useEffect(() => {
+    if (gameState !== "ending") return;
+
+    const timer = window.setTimeout(() => {
+      useGameStore.getState().setGameState("finished");
+      document.exitPointerLock();
+      useGameStore.getState().setIsLocked(false);
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [gameState]);
+
   // 游戏计时
   useEffect(() => {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
@@ -438,15 +471,18 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       if (++tick % 10 === 0) setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
         setTimeLeft(0);
-        useGameStore.getState().setGameState("finished");
         const totalShots = shotsRef.current;
         const hits = hitsRef.current;
         const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
         const avgReactionTime = getAverageReactionTime();
         useGameStore.getState().setGameStats({ hits, totalShots, accuracy, avgReactionTime });
+        const run = analyticsRunRef.current;
+        analyticsRunRef.current = null;
+        if (run) captureAnalytics("training completed", {
+          ...run, hits, total_shots: totalShots, accuracy, average_reaction_ms: avgReactionTime,
+        });
         hideAllTargets(targetsRef.current);
-        document.exitPointerLock();
-        useGameStore.getState().setIsLocked(false);
+        useGameStore.getState().setGameState("ending");
         clearInterval(timer);
       }
     }, 10);
@@ -463,6 +499,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     timeLeftRef,
     triggerStart,
     triggerResume,
+    abandonTraining,
     startGame,
     startCountdown,
     gameStats,

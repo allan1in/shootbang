@@ -1,4 +1,8 @@
 import * as Sentry from "@sentry/nextjs";
+import { initializeAnalytics } from "@/lib/analytics";
+
+// SDK loading is asynchronous and must not hold up hydration or renderer startup.
+try { initializeAnalytics(); } catch { /* Analytics is optional. */ }
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
