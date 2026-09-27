@@ -14,6 +14,8 @@ const sentryRelease =
 
 const nextConfig: NextConfig = {
   env: {
+    NEXT_PUBLIC_APP_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+    NEXT_PUBLIC_APP_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
     ...(sentryEnvironment
       ? { NEXT_PUBLIC_SENTRY_ENVIRONMENT: sentryEnvironment }
       : {}),

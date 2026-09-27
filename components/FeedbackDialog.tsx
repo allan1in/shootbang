@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { FeedbackResponse } from "@/lib/feedback";
+import { captureAnalytics } from "@/lib/analytics";
 
 const MAX_FEEDBACK_LENGTH = 2_000;
 
@@ -109,6 +110,9 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     setSubmitting(true);
+    const analyticsAttemptId = crypto.randomUUID();
+    const startedAt = performance.now();
+    captureAnalytics("feedback submitted", { attempt_id: analyticsAttemptId });
 
     try {
       const controller = new AbortController();
@@ -130,6 +134,11 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       if (!openRef.current || generation !== generationRef.current) return;
 
       if (!response.ok || !result.ok) {
+        captureAnalytics("feedback failed", {
+          attempt_id: analyticsAttemptId,
+          elapsed_ms: Math.round(performance.now() - startedAt),
+          reason: response.status === 429 ? "rate_limited" : "server_rejected",
+        });
         toast.error(
           result.ok ? ERROR_MESSAGES.send_failed : ERROR_MESSAGES[result.code],
         );
@@ -137,6 +146,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       }
 
       toast.success("发送成功，感谢你的反馈");
+      captureAnalytics("feedback sent", { attempt_id: analyticsAttemptId, elapsed_ms: Math.round(performance.now() - startedAt) });
       closeDialog();
     } catch (error) {
       if (
@@ -147,6 +157,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       }
       if (error instanceof Error && error.name === "AbortError") return;
       if (!openRef.current || generation !== generationRef.current) return;
+      captureAnalytics("feedback failed", { attempt_id: analyticsAttemptId, elapsed_ms: Math.round(performance.now() - startedAt), reason: "network_or_invalid_response" });
       toast.error("反馈发送失败，请稍后重试。");
     } finally {
       if (generation === generationRef.current) {

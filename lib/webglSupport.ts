@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { captureAnalytics } from "@/lib/analytics";
 import type { Context, Contexts } from "@sentry/nextjs";
 import {
   claimRendererStartupSlowReport,
@@ -364,6 +365,7 @@ export function createRendererStartupSlowSentryData(
 export function reportRendererStartupSlow(stage: RendererStartupSlowStage) {
   const snapshot = claimRendererStartupSlowReport(stage);
   if (!snapshot) return;
+  captureAnalytics("renderer slow", { stage }, `renderer-slow:${stage}`);
   const sentryData = createRendererStartupSlowSentryData(stage, snapshot);
 
   if (process.env.NODE_ENV !== "production") {
@@ -386,6 +388,7 @@ export function reportWebGLStartupFailure(
 ) {
   const snapshot = claimRendererStartupFailureReport(stage);
   if (!snapshot) return;
+  captureAnalytics("renderer failed", { stage }, "renderer-failed");
 
   if (process.env.NODE_ENV !== "production") {
     window.__shootbang_webgl_test?.reportedStages?.push(stage);
