@@ -6,6 +6,7 @@ import { Crosshair } from "@/components/Crosshair";
 import { PauseOverlay } from "@/components/PauseOverlay";
 import { IdleScreen } from "@/components/IdleScreen";
 import { CountdownOverlay } from "@/components/CountdownOverlay";
+import { EndingOverlay } from "@/components/EndingOverlay";
 import { FinishedOverlay } from "@/components/FinishedOverlay";
 import { TimerBar } from "@/components/TimerBar";
 import { FpsCounter } from "@/components/FpsCounter";
@@ -225,6 +226,8 @@ export default function GameBoard({ onRendererReady }: GameBoardProps) {
       {game.countdown !== null && (
         <CountdownOverlay countdown={game.countdown} />
       )}
+
+      {game.gameState === "ending" && <EndingOverlay />}
 
       {/* 暴雪白化遮罩 */}
       {theme === "blizzard" && (

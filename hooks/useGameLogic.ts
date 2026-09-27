@@ -92,7 +92,7 @@ export function useGameLogic(deps: UseGameLogicDeps) {
   // eslint-disable-next-line react-hooks/immutability
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement) {
+      if (document.pointerLockElement && useGameStore.getState().gameState === "playing") {
         applyMouseMovement(e.movementX, e.movementY);
       }
     };
@@ -425,6 +425,19 @@ export function useGameLogic(deps: UseGameLogicDeps) {
     return () => window.removeEventListener("mousedown", handleMouseDown);
   }, []);
 
+  // 保留场景一秒展示结束提示，随后进入结算页。
+  useEffect(() => {
+    if (gameState !== "ending") return;
+
+    const timer = window.setTimeout(() => {
+      useGameStore.getState().setGameState("finished");
+      document.exitPointerLock();
+      useGameStore.getState().setIsLocked(false);
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [gameState]);
+
   // 游戏计时
   useEffect(() => {
     if (gameState !== "playing" || isPaused || countdown !== null) return;
@@ -438,15 +451,13 @@ export function useGameLogic(deps: UseGameLogicDeps) {
       if (++tick % 10 === 0) setTimeLeft(timeLeftRef.current);
       if (timeLeftRef.current <= 0) {
         setTimeLeft(0);
-        useGameStore.getState().setGameState("finished");
         const totalShots = shotsRef.current;
         const hits = hitsRef.current;
         const accuracy = totalShots > 0 ? Math.round((hits / totalShots) * 100) : 0;
         const avgReactionTime = getAverageReactionTime();
         useGameStore.getState().setGameStats({ hits, totalShots, accuracy, avgReactionTime });
         hideAllTargets(targetsRef.current);
-        document.exitPointerLock();
-        useGameStore.getState().setIsLocked(false);
+        useGameStore.getState().setGameState("ending");
         clearInterval(timer);
       }
     }, 10);

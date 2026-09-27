@@ -1248,6 +1248,56 @@ test.describe("游戏结束", () => {
   });
 });
 
+test("计时结束后显示一秒结束提示，再进入结算页", async ({ page }) => {
+  await page.goto("/");
+  await waitForCanvas(page);
+  await page.clock.install();
+
+  await page.evaluate(() => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    api.startGame();
+  });
+  await expect(page.locator('[data-slot="progress"]')).toBeVisible();
+
+  await page.clock.fastForward(30_100);
+  await expect.poll(() => getGameState(page)).toBe("ending");
+  const endingText = page.getByText("结束", { exact: true });
+  await expect(endingText).toBeVisible();
+  await expect(endingText).toHaveCSS("font-size", "128px");
+  await expect(endingText).toHaveCSS("font-weight", "700");
+  const bounds = await endingText.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - viewport!.width / 2)).toBeLessThan(2);
+  expect(Math.abs(bounds!.y + bounds!.height / 2 - viewport!.height / 2)).toBeLessThan(2);
+  await expect(page.locator("canvas")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新开始" })).toHaveCount(0);
+  const targets = await page.evaluate(() => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    return api.getTargetsInfo();
+  });
+  expect(targets.length).toBeGreaterThan(0);
+  expect(targets.every((target) => !target.visible)).toBe(true);
+
+  const statsBeforeClick = await page.evaluate(() => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    return api.getGameStats();
+  });
+  await page.mouse.click(viewport!.width / 2, viewport!.height / 2);
+  expect(await page.evaluate(() => {
+    const api = (window as unknown as Record<string, unknown>).__shootbang_test as ShootbangTestAPI;
+    return api.getGameStats();
+  })).toEqual(statsBeforeClick);
+
+  await page.clock.fastForward(900);
+  expect(await getGameState(page)).toBe("ending");
+  await page.clock.fastForward(110);
+  await expect.poll(() => getGameState(page)).toBe("finished");
+  await expect(endingText).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "重新开始" })).toBeVisible();
+});
+
 // ===== 重新开始 =====
 
 test.describe("重新开始", () => {
