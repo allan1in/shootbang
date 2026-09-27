@@ -1262,7 +1262,7 @@ test("计时结束后显示一秒结束提示，再进入结算页", async ({ pa
   await expect.poll(() => getGameState(page)).toBe("ending");
   const endingText = page.getByText("结束", { exact: true });
   await expect(endingText).toBeVisible();
-  await expect(endingText).toHaveCSS("font-size", "128px");
+  await expect(endingText).toHaveCSS("font-size", "64px");
   await expect(endingText).toHaveCSS("font-weight", "700");
   const bounds = await endingText.boundingBox();
   const viewport = page.viewportSize();
